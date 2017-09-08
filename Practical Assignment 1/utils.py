@@ -107,7 +107,7 @@ class RandomIterator(object):
 
         return self
 
-    def next(self):
+    def __next__(self):
 
         self.idx += 1
 
