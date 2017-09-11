@@ -1,0 +1,4 @@
+# .gitignore Python
+**/.idea/
+**/__pycache__/
+**/result/
