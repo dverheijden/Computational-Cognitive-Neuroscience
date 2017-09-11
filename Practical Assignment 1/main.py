@@ -1,12 +1,6 @@
 import utils
-import numpy as np
-import chainer
-from chainer import cuda, Function, gradient_check, report, training, Variable
-from chainer import datasets, iterators, optimizers, serializers
-from chainer import Link, Chain, ChainList
-import chainer.functions as F
+from chainer import optimizers
 import chainer.links as L
-from chainer.training import extensions
 from MLP import MLP
 
 
@@ -20,38 +14,47 @@ batch_size = 32
 train_iter = utils.RandomIterator(train, batch_size)
 test_iter = utils.RandomIterator(test, batch_size)
 
+# Standard classifier that uses softmax_cross_entropy as loss function
 model = L.Classifier(MLP(n_hidden, n_output))
 optimizer = optimizers.SGD()
 optimizer.setup(model)
 
 
-def run():
-
+def feed_data(random_iter, update):
+    """
+    Feeds the network data
+    :param random_iter: Iterator that holds the data
+    :param update: Boolean whether to update the model parameters
+    :return: loss and accuracy
+    """
     total_loss = 0
     total_accuracy = 0
 
-    for epoch in range(n_epochs):
-        for data in train_iter:
-            x = data[0]
-            labels = data[1]
+    for data in random_iter:
+        x = data[0]
+        labels = data[1]
+        if update:
             optimizer.update(model, x, labels)
 
-            total_loss += float(model.loss.data) * len(labels)
-            total_accuracy += float(model.accuracy.data) * len(labels)
+        total_loss += float(model.loss.data) * len(labels)
+        total_accuracy += float(model.accuracy.data) * len(labels)
+    return total_loss / random_iter.idx, total_accuracy / random_iter.idx
 
-        print('Train {}: accuracy: {} \t loss: {}'.format(epoch + 1, total_accuracy / train_iter.idx, total_loss / train_iter.idx))
 
-        total_loss = 0
-        total_accuracy = 0
+def run():
+    """
+    Trains the MLP network for n_epochs.
+    One epoch contains of a training phase and testing phase. Afterwards, the results are printed to the screen
+    """
+    for epoch in range(n_epochs):
+        train_loss, train_accuracy = feed_data(train_iter, True)
+        test_loss, test_accuracy = feed_data(test_iter, False)
 
-        for data in test_iter:
-            x = data[0]
-            labels = data[1]
+        print('Epoch {} \n'
+              'Training: accuracy: {} \t loss: {} \n'
+              'Testing: accuracy: {} \t loss: {}'.format(epoch + 1,
+                                                         train_accuracy, train_loss,
+                                                         test_accuracy, test_loss))
 
-            loss = model(x, labels)
-            total_loss += float(loss.data) * len(labels)
-            total_accuracy += float(model.accuracy.data) * len(labels)
-
-        print('Test {}: accuracy: {} \t loss: {}'.format(epoch + 1, total_accuracy / test_iter.idx, total_loss / test_iter.idx))
 
 run()
