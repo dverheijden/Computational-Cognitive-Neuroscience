@@ -35,6 +35,8 @@ def feed_data(random_iter, update):
         labels = data[1]
         if update:
             optimizer.update(model, x, labels)
+        else:
+            model(x, labels)
 
         total_loss += float(model.loss.data) * len(labels)
         total_accuracy += float(model.accuracy.data) * len(labels)
