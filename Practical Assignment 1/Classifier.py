@@ -1,11 +1,7 @@
-import numpy as np
-import chainer
-from chainer import cuda, Function, gradient_check, report, training, utils, Variable
-from chainer import datasets, iterators, optimizers, serializers
-from chainer import Link, Chain, ChainList
+from chainer import report
+from chainer import Chain
 import chainer.functions as F
-import chainer.links as L
-from chainer.training import extensions
+
 
 class Classifier(Chain):
     def __init__(self, predictor):
