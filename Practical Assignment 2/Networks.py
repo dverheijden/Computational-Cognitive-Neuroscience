@@ -54,3 +54,33 @@ class FullyConnectedNet(Chain):
             layer_outputs.append(F.relu(self.layers[i](layer_outputs[-1])))
         layer_output = self.layers[-1](layer_outputs[-1])
         return layer_output
+
+
+
+
+class Convolutional(Chain):
+    """
+        Neural Network Definition, Of a Convo
+        l1: fully connected hidden layer
+        l2: output layer
+    """
+    def __init__(self):
+        super(Convolutional, self).__init__()
+        with self.init_scope():
+            feature_maps = 1
+            self.convLayer = L.Convolution2D(None, feature_maps, ksize=5)
+            self.mPoolLayer = L.Convolution2D(feature_maps, 5, ksize=2)
+            self.fullyConnectedOutput = L.Linear(None, 10)
+
+
+    def __call__(self, x):
+        """
+        Feed the data in a forward fashion through the MLP
+        :param x: Data
+        :return: Last Link of the MLP
+        """
+        print('ndim = ' + str(x.ndim)) 
+        conv_units = (self.convLayer(x))
+        # max_pooling_units = F.max_pooling_2d(self.mPoolLayer(conv_units), ksize=2)
+        # connected = self.fullyConnectedOutput(x)
+        # return connected
