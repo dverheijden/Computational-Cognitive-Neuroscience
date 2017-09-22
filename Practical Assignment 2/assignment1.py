@@ -4,6 +4,7 @@ import Networks
 import chainer
 from Classifier import Classifier
 import matplotlib.pyplot as plt
+import pickle
 
 # Import whole dataset
 train, test = chainer.datasets.get_mnist()
@@ -15,17 +16,8 @@ batch_size = 32
 train_iter = utils.RandomIterator(train, batch_size)
 test_iter = utils.RandomIterator(test, batch_size)
 
-train_loss_list = []
-test_loss_list = []
 
-
-# Standard classifier that uses softmax_cross_entropy as loss function
-model = Classifier(Networks.FullyConnectedNet(2, 10))
-optimizer = optimizers.SGD()
-optimizer.setup(model)
-
-
-def feed_data(random_iter, update):
+def feed_data(model, optimizer, random_iter, update):
     """
     Feeds the network data
     :param random_iter: Iterator that holds the data
@@ -47,14 +39,16 @@ def feed_data(random_iter, update):
     return total_loss / random_iter.idx, total_accuracy / random_iter.idx
 
 
-def run():
+def trainNetwork(model, optimizer):
     """
     Trains the MLP network for n_epochs.
     One epoch contains of a training phase and testing phase. Afterwards, the results are printed to the screen
     """
+    train_loss_list = []
+    test_loss_list = []
     for epoch in range(n_epochs):
-        train_loss, train_accuracy = feed_data(train_iter, True)
-        test_loss, test_accuracy = feed_data(test_iter, False)
+        train_loss, train_accuracy = feed_data(model, optimizer, train_iter, True)
+        test_loss, test_accuracy = feed_data(model, optimizer, test_iter, False)
 
         train_loss_list.append(train_loss)
         test_loss_list.append(test_loss)
@@ -64,12 +58,23 @@ def run():
                                                          train_accuracy, train_loss,
                                                          test_accuracy, test_loss))
 
+    return train_loss_list, test_loss_list
+
+
+def run():
+    for N in range(1, 4):
+        model = Classifier(Networks.FullyConnectedNet(N, 10))
+        optimizer = optimizers.SGD()
+        optimizer.setup(model)
+
+        train_loss_list, test_loss_list = trainNetwork(model, optimizer)
+        plt.plot(test_loss_list, label='Test Loss')
+        plt.plot(train_loss_list, label='Train Loss')
+        plt.legend()
+        plt.ylabel("Loss")
+        plt.xlabel("Epoch")
+        plt.title("Loss as a function of epochs, N=%s" %N)
+        plt.show()
+
 
 run()
-plt.plot(test_loss_list, label='Test Loss')
-plt.plot(train_loss_list, label='Train Loss')
-plt.legend()
-plt.ylabel("Loss")
-plt.xlabel("Epoch")
-plt.title("Loss as a function of epochs")
-plt.show()
