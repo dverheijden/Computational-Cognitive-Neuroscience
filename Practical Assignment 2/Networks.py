@@ -47,8 +47,6 @@ class FullyConnectedNet(Chain):
         return layer_output
 
 
-
-
 class Convolutional(Chain):
     """
         Neural Network Definition, Of a Convo
@@ -58,11 +56,9 @@ class Convolutional(Chain):
     def __init__(self):
         super(Convolutional, self).__init__()
         with self.init_scope():
-            feature_maps = 1
+            feature_maps = 5
             self.convLayer = L.Convolution2D(None, feature_maps, ksize=5)
-            self.mPoolLayer = L.Convolution2D(feature_maps, 5, ksize=2)
             self.fullyConnectedOutput = L.Linear(None, 10)
-
 
     def __call__(self, x):
         """
@@ -70,8 +66,7 @@ class Convolutional(Chain):
         :param x: Data
         :return: Last Link of the MLP
         """
-        print('ndim = ' + str(x.ndim)) 
-        conv_units = (self.convLayer(x))
-        # max_pooling_units = F.max_pooling_2d(self.mPoolLayer(conv_units), ksize=2)
-        # connected = self.fullyConnectedOutput(x)
-        # return connected
+        conv_units = F.relu(self.convLayer(x))
+        max_pooling_units = F.max_pooling_2d(conv_units, ksize=2)
+        connected = self.fullyConnectedOutput(max_pooling_units)
+        return connected
