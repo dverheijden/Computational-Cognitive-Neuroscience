@@ -35,11 +35,11 @@ def get_model(model_name):
         optimizer.setup(model)
         print("Model not found! Starting training ...")
         results = train_network(model, optimizer)
-        with open('convnet_model.pickle', 'wb') as f:
+        with open('{}_model.pickle'.format(model_name), 'wb') as f:
             pickle.dump(model, f)
-        with open('convnet_optimizer.pickle', 'wb') as f:
+        with open('{}_optimizer.pickle'.format(model_name), 'wb') as f:
             pickle.dump(optimizer, f)
-        with open('convnet_results.pickle', 'wb') as f:
+        with open('{}_results.pickle'.format(model_name), 'wb') as f:
             pickle.dump(results, f)
 
     return model, optimizer, results
@@ -52,19 +52,20 @@ def feed_data(model, optimizer, random_iter, update):
     :param update: Boolean whether to update the model parameters
     :return: loss and accuracy
     """
-    total_loss = 0
-    total_accuracy = 0
+    with chainer.using_config('train', update):
+        total_loss = 0
+        total_accuracy = 0
 
-    for data in random_iter:
-        x = data[0]
-        labels = data[1]
-        if update:
-            optimizer.update(model, x, labels)
-        else:
-            model(x, labels)
-        total_loss += float(model.loss.data)
-        total_accuracy += float(model.accuracy.data)
-    return total_loss / random_iter.idx, total_accuracy / random_iter.idx
+        for data in random_iter:
+            x = data[0]
+            labels = data[1]
+            if update:
+                optimizer.update(model, x, labels)
+            else:
+                model(x, labels)
+            total_loss += float(model.loss.data)
+            total_accuracy += float(model.accuracy.data)
+        return total_loss / random_iter.idx, total_accuracy / random_iter.idx
 
 
 def train_network(model, optimizer):

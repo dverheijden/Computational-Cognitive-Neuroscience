@@ -1,6 +1,7 @@
 from chainer import Chain
 import chainer.functions as F
 import chainer.links as L
+import chainer
 
 
 class FullyConnectedNet(Chain):
@@ -66,7 +67,8 @@ class Convolutional(Chain):
         :param x: Data
         :return: Last Link of the MLP
         """
-        conv_units = F.relu(self.convLayer(x))
+
+        conv_units = F.dropout(F.relu(self.convLayer(x)),ratio=0.4)
         max_pooling_units = F.max_pooling_2d(conv_units, ksize=2)
-        connected = self.fullyConnectedOutput(max_pooling_units)
+        connected = F.dropout(self.fullyConnectedOutput(max_pooling_units), ratio=.2)
         return connected
