@@ -104,14 +104,19 @@ def test_network(model, optimizer):
                                                           test_accuracy, test_loss))
 
 
-# MAIN PROGRAM START
-model, optimizer, results = get_model("convnet_v0")
-test_network(model, optimizer)
+def run(network_name):
+    model, optimizer, results = get_model(network_name)
+    test_network(model, optimizer)
 
-plt.plot(results[1], label='Test Loss')
-plt.plot(results[0], label='Train Loss')
-plt.legend()
-plt.ylabel("Loss")
-plt.xlabel("Epoch")
-plt.title("Loss as a function of epochs")
-plt.show()
+    plt.plot(results[1], label='Test Loss')
+    plt.plot(results[0], label='Train Loss')
+    plt.legend()
+    plt.ylabel("Loss")
+    plt.xlabel("Epoch")
+    plt.title("Loss as a function of epochs")
+    plt.show()
+
+
+# MAIN PROGRAM START
+run("convnet_v0")
+run("convnet_dropout")

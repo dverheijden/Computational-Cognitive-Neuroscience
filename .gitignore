@@ -3,6 +3,4 @@
 **/__pycache__/
 **/result/
 **/.ipynb_checkpoints/
-**/.pickle
-.vscode/.ropeproject/config.py
-**/.vscode/
+**/*.pickle
