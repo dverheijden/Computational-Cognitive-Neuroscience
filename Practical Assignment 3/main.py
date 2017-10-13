@@ -1,6 +1,8 @@
 import numpy as np
 import chainer.links as L
 from chainer import optimizers
+from chainer import training
+from chainer.training import extensions
 from chainer.datasets import TupleDataset
 from Networks import RNN
 from Regressor import Regressor
@@ -31,13 +33,28 @@ def feed_data():
 
 
 if __name__ == "__main__":
+	epochs = 100
+
+
 	dataset = create_data()
 
 	rnn = RNN(n_hidden=50)
 
 	model = Regressor(rnn)
 
+	# Set up the optimizer
 	optimizer = optimizers.SGD()
 	optimizer.setup(rnn)
 
-	feed_data()
+	# Set up the trainer
+	updater = training.StandardUpdater(train_iter, optimizer)
+	trainer = training.Trainer(updater, (epochs, 'epoch'))
+
+	# Evaluate the model with the test dataset for each epoch
+	trainer.extend(extensions.Evaluator(test_iter, model))
+
+	trainer.extend(extensions.LogReport())
+	trainer.extend(extensions.PrintReport(['epoch', 'main/accuracy', 'validation/main/accuracy']))
+	trainer.extend(extensions.ProgressBar())
+
+	trainer.run()
