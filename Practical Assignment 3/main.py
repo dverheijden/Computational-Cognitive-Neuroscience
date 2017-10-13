@@ -13,6 +13,7 @@ from Regressor import Regressor
 # create toy data - compute sum of the previous and current input
 from Regressor_v0 import Regressor_v0
 from utils import StreamingIterator
+import matplotlib.pyplot as plt
 
 
 def create_data(n=3000):
@@ -45,15 +46,17 @@ def train_network():
 		rnn.reset_state()
 		for data in train_iter:
 			train_loss, train_accuracy = feed_data(data)
-			test_loss, test_accuracy = feed_data(data)
+			# test_loss, test_accuracy = feed_data(data)
 
 			train_loss_list.append(train_loss)
-			test_loss_list.append(test_loss)
-			print('Epoch {} \n'
-			      'Training: accuracy: {} \t loss: {} \n'
-			      'Testing: accuracy: {} \t loss: {}'.format(epoch + 1,
-			                                                 train_accuracy, train_loss,
-			                                                 test_accuracy, test_loss))
+			# test_loss_list.append(test_loss)
+		print('Epoch {} \n'
+				'Training: accuracy: {} \t loss: {} \n'
+				# 'Testing: accuracy: {} \t loss: {}'
+				.format(epoch + 1,
+															train_accuracy, train_loss,
+															# test_accuracy, test_loss
+															))
 
 	return [train_loss_list, test_loss_list]
 
@@ -66,49 +69,20 @@ def feed_data(data):
 		optimizer.update(compute_loss, i, label)
 		total_loss += float(model.loss.data)
 		total_accuracy += float(model.accuracy.data)
+	print(total_loss/len(data))
 	return total_loss / len(data), total_accuracy / len(data)
-
-def with_trainer():
-	epochs = 100
-
-	train = create_data()
-	test = create_data()
-
-	train_iter = iterators.SerialIterator(train, batch_size=100, shuffle=False)
-	test_iter = iterators.SerialIterator(test, batch_size=100, repeat=False, shuffle=False)
-
-	rnn = RNN(n_hidden=50)
-
-	model = Regressor(rnn, compute_loss)
-
-	# Set up the optimizer
-	optimizer = optimizers.SGD()
-	optimizer.setup(rnn)
-
-	# Set up the trainer
-	updater = training.StandardUpdater(train_iter, optimizer)
-	trainer = training.Trainer(updater, (epochs, 'epoch'))
-
-	# Evaluate the model with the test dataset for each epoch
-	trainer.extend(extensions.Evaluator(test_iter, model))
-
-	trainer.extend(extensions.LogReport())
-	trainer.extend(extensions.PrintReport(['epoch', 'main/accuracy', 'validation/main/accuracy']))
-	trainer.extend(extensions.ProgressBar())
-
-	trainer.run()
 
 
 if __name__ == "__main__":
 	n_epochs = 5
 
-	train = create_data()
-	test = create_data()
+	train = create_data(1000)
+	test = create_data(20)
 
-	train_iter = StreamingIterator(train, batch_size=3000)
-	test_iter = StreamingIterator(test, batch_size=200)
+	train_iter = StreamingIterator(train, batch_size=100)
+	test_iter = StreamingIterator(test, batch_size=5)
 
-	rnn = RNN(n_hidden=5)
+	rnn = RNN(n_hidden=30)
 
 	model = Regressor_v0(rnn)
 
@@ -116,4 +90,18 @@ if __name__ == "__main__":
 	optimizer = optimizers.SGD()
 	optimizer.setup(model)
 
+
 	train_network()
+
+
+	graph_zise = 100
+	test = create_data(graph_zise)
+	rnn.reset_state()
+	result_list = []
+	expected_list = []
+	for x, label in test:
+		result_list.append(rnn(x).data[0,0])
+		expected_list.append(label[0])
+	
+	plt.plot(np.arange(graph_zise), result_list, 'bs', np.arange(graph_zise), expected_list, 'g^')
+	plt.show()

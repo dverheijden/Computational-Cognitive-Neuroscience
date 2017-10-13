@@ -12,5 +12,5 @@ class Regressor_v0(Chain):
 	def __call__(self, x, label):
 		self.y = self.model(x)
 		self.loss = (self.y - label)**2
-		self.accuracy = abs(self.y - label)
+		self.accuracy = - F.log(abs(self.y - label))
 		return self.loss
