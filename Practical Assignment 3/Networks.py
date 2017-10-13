@@ -16,7 +16,7 @@ class RNN(Chain):
 		self.lstm.reset_state()
 
 	def __call__(self, x):
-		x = Variable(np.array([x]))
+		x = Variable(np.array([np.float32([x])]))
 		l1 = self.lstm(x)
 		y = self.out(l1)
 
