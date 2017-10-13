@@ -6,6 +6,7 @@ from chainer.training import extensions
 from chainer.datasets import TupleDataset
 from Networks import RNN
 from Regressor import Regressor
+from utils import StreamingIterator
 
 
 # create toy data - compute sum of the previous and current input
@@ -23,18 +24,19 @@ def compute_loss(data):
 
 	loss += model(data[0][0], data[1][0])
 
+	print(loss)
 	return loss
 
 
 def feed_data():
-	for data in dataset:
+	for data in StreamingIterator(dataset, 30):
 		rnn.reset_state()
-		optimizer.update(compute_loss, data)
+		for i in data:
+			optimizer.update(compute_loss, i)
 
 
 if __name__ == "__main__":
 	epochs = 100
-
 
 	dataset = create_data()
 
