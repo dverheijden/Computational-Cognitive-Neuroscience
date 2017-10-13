@@ -19,10 +19,8 @@ def create_data(n=3000):
 def compute_loss(data):
 	loss = 0
 
-	print(data[1][0])
 	loss += model(data[0][0], data[1][0])
 
-	print('Loss: {}'.format(loss))
 	return loss
 
 
@@ -34,9 +32,6 @@ def feed_data():
 
 if __name__ == "__main__":
 	dataset = create_data()
-
-	print(dataset.__getitem__(0)[0])
-	print(dataset.__getitem__(1))
 
 	rnn = RNN(n_hidden=50)
 
