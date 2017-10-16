@@ -1,17 +1,10 @@
 import numpy as np
-import chainer
-from chainer import cuda, Function, gradient_check, report, training, utils, Variable
-from chainer import datasets, iterators, optimizers, serializers
+from chainer import optimizers
 from chainer.datasets import TupleDataset
-from chainer import Link, Chain, ChainList
-import chainer.functions as F
-import chainer.links as L
-from chainer.training import extensions
 from Networks import RNN
 from Regressor import Regressor
+import pickle
 
-# create toy data - compute sum of the previous and current input
-from Regressor_v0 import Regressor_v0
 from utils import StreamingIterator
 import matplotlib.pyplot as plt
 
@@ -25,83 +18,181 @@ def create_data(n=3000):
 	return TupleDataset(X, T)
 
 
-def compute_loss(x, label):
-	loss = 0
+def compute_loss(y, t):
+	"""
+	We define the loss as the squared error between the predicted and actual sum
+	:param y: predicted sum
+	:param t: actual sum
+	:return: loss
+	"""
+	return pow(y - t, 2)
 
-	loss += model(x, label)
 
-	return loss
+def compute_accuracy(y, t):
+	"""
+	We define the accuracy as 1 over the distance between the predicted and actual sum
+	:param y: predicted sum
+	:param t: actual sum
+	:return: accuracy
+	"""
+	return 1 / abs(y - t)
 
 
-def train_network():
+def train_network(sample_iter, rnn, model, optimizer):
 	"""
 	Trains the network for n_epochs.
-	One epoch contains of a training phase and testing phase. Afterwards, the results are printed to the screen
+	One epoch contains of a training phase and testing phase.
+	:param sample_iter: training data iterator
+	:param rnn:
+	:param model:
+	:param optimizer:
+	:return: average test and training loss per epoch
 	"""
-
 	train_loss_list = []
 	test_loss_list = []
 
 	for epoch in range(n_epochs):
-		rnn.reset_state()
-		for data in train_iter:
-			train_loss, train_accuracy = feed_data(data)
-			# test_loss, test_accuracy = feed_data(data)
+		print('Epoch {}'.format(epoch + 1))
+		current_train_loss = 0
+		current_test_loss = 0
+		for batch in sample_iter:
+			rnn.reset_state()  # new batch -> reset states
+			train_loss, train_accuracy = feed_data(batch, model, optimizer, True)
+			test_loss, test_accuracy = feed_data(batch, model, optimizer, False)
 
-			train_loss_list.append(train_loss)
-			# test_loss_list.append(test_loss)
-		print('Epoch {} \n'
-				'Training: accuracy: {} \t loss: {} \n'
-				# 'Testing: accuracy: {} \t loss: {}'
-				.format(epoch + 1,
-															train_accuracy, train_loss,
-															# test_accuracy, test_loss
-															))
-
+			current_train_loss += train_loss
+			current_test_loss += test_loss
+			print("\t Training: accuracy: {} \t loss: {} \n\t Testing: accuracy: {} \t loss: {}".format(
+				train_accuracy,
+				train_loss,
+				test_accuracy,
+				test_loss))
+		train_loss_list.append(current_train_loss / len(sample_iter))
+		test_loss_list.append((current_test_loss / len(sample_iter)))
 	return [train_loss_list, test_loss_list]
 
 
-def feed_data(data):
-
+def feed_data(batch, model, optimizer, update):
+	"""
+	Feed the data through the network and update the weights if needed
+	:param batch: sequential data
+	:param model:
+	:param optimizer:
+	:param update: bool on whether to update the weights
+	:return: average loss and accuracy of the batch
+	"""
 	total_loss = 0
 	total_accuracy = 0
-	for i, label in data:
-		optimizer.update(compute_loss, i, label)
+	for x, t in batch:
+		model(x, t)
+		if update:
+			optimizer.update(compute_loss, model.y, t)
 		total_loss += float(model.loss.data)
 		total_accuracy += float(model.accuracy.data)
-	print(total_loss/len(data))
-	return total_loss / len(data), total_accuracy / len(data)
+	return total_loss / len(batch), total_accuracy / len(batch)
+
+
+def test_network(sample_iter):
+	"""
+	Test the network by feeding it the sequential data
+	Plot the predicted and actual sum per sample
+	Plot the difference between the actual and predicted sum
+	:param sample_iter: Test iterator object over test samples
+	:return:
+	"""
+	rnn.reset_state()  # reset internal states
+	predicted_sum = []
+	actual_sum = []
+	for sample in sample_iter:
+		for data in sample:
+			x, t = data
+			model(x, t)
+			actual_sum.append(t[0])  # unpack values
+			predicted_sum.append(model.y.data[0][0])  # unpack values
+
+	plt.plot(predicted_sum, 'ro', label="predicted sum")
+	plt.plot(actual_sum, 'go', label="actual sum")
+	plt.xlabel("sample")
+	plt.ylabel("output")
+	plt.legend()
+	plt.show()
+
+	difference = abs(np.subtract(predicted_sum, actual_sum))
+	plt.plot(difference)
+	plt.xlabel("sample")
+	plt.ylabel("prediction error")
+	plt.show()
+
+
+def get_model(model_name):
+	"""
+	Load the named model if it exists, otherwise train it
+	:param model_name: Name of the model
+	:return: Network, Regressor, Optimizer and results
+	"""
+	try:
+		pickle_in = open("{}_rnn.pickle".format(model_name), 'rb')
+		rnn = pickle.load(pickle_in)
+
+		pickle_in = open("{}_model.pickle".format(model_name), 'rb')
+		model = pickle.load(pickle_in)
+
+		pickle_in = open("{}_optimizer.pickle".format(model_name), 'rb')
+		optimizer = pickle.load(pickle_in)
+
+		pickle_in = open("{}_results.pickle".format(model_name), 'rb')
+		results = pickle.load(pickle_in)
+
+		print("Model '{}' Loaded!".format(model_name))
+
+	except FileNotFoundError:
+		rnn = RNN(n_hidden=hidden_units)
+
+		model = Regressor(rnn, accfun=compute_accuracy, lossfun=compute_loss)
+
+		# Set up the optimizer
+		optimizer = optimizers.SGD()
+		optimizer.setup(model)
+
+		print("Model not found! Starting training ...")
+		results = train_network(train_iter, rnn, model, optimizer)
+
+		with open('{}_rnn.pickle'.format(model_name), 'wb') as f:
+			pickle.dump(rnn, f)
+		with open('{}_model.pickle'.format(model_name), 'wb') as f:
+			pickle.dump(model, f)
+		with open('{}_optimizer.pickle'.format(model_name), 'wb') as f:
+			pickle.dump(optimizer, f)
+		with open('{}_results.pickle'.format(model_name), 'wb') as f:
+			pickle.dump(results, f)
+
+	# Plot the training and test loss as a function of epochs
+	plt.plot(results[0], label='train loss')
+	plt.plot(results[1], label='test loss')
+	plt.legend()
+	plt.xlabel("epoch")
+	plt.ylabel("loss")
+	plt.show()
+	return rnn, model, optimizer, results
 
 
 if __name__ == "__main__":
-	n_epochs = 5
+	n_epochs = 10
+	batch_size = 100
+	train_data_size = 1000
+	hidden_units = 30
 
-	train = create_data(1000)
-	test = create_data(20)
+	train_data = create_data(n=train_data_size)
+	test_data = create_data(n=100)
 
-	train_iter = StreamingIterator(train, batch_size=100)
-	test_iter = StreamingIterator(test, batch_size=5)
+	train_iter = StreamingIterator(train_data, batch_size=batch_size)
+	test_iter = StreamingIterator(test_data, batch_size=len(test_data))
 
-	rnn = RNN(n_hidden=30)
+	rnn, model, optimizer, results = get_model("n_epochs{}_batch_size{}_train_size{}_hidden_units{}".format(
+		n_epochs,
+		batch_size,
+		train_data_size,
+		hidden_units
+	))
 
-	model = Regressor_v0(rnn)
-
-	# Set up the optimizer
-	optimizer = optimizers.SGD()
-	optimizer.setup(model)
-
-
-	train_network()
-
-
-	graph_zise = 100
-	test = create_data(graph_zise)
-	rnn.reset_state()
-	result_list = []
-	expected_list = []
-	for x, label in test:
-		result_list.append(rnn(x).data[0,0])
-		expected_list.append(label[0])
-	
-	plt.plot(np.arange(graph_zise), result_list, 'bs', np.arange(graph_zise), expected_list, 'g^')
-	plt.show()
+	test_network(test_iter)

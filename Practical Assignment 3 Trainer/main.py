@@ -21,8 +21,8 @@ def create_data(n=3000):
 	return TupleDataset(X, T)
 
 
-def compute_loss(*args, **kwargs):
-	return pow(args[0] - args[1], 2)
+def compute_loss(y, t):
+	return pow(y - t, 2)
 
 
 def compute_accuracy(y, t):
