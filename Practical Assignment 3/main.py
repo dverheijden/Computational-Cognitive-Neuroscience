@@ -5,6 +5,8 @@ from Networks import RNN
 from Regressor import Regressor
 import pickle
 
+from tqdm import tqdm
+
 from utils import StreamingIterator
 import matplotlib.pyplot as plt
 
@@ -52,21 +54,21 @@ def train_network(sample_iter, rnn, model, optimizer):
 	test_loss_list = []
 
 	for epoch in range(n_epochs):
-		print('Epoch {}'.format(epoch + 1))
+		# print('Epoch {}'.format(epoch + 1))
 		current_train_loss = 0
 		current_test_loss = 0
-		for batch in sample_iter:
+		for batch in tqdm(sample_iter, leave=False):
 			rnn.reset_state()  # new batch -> reset states
 			train_loss, train_accuracy = feed_data(batch, model, optimizer, True)
 			test_loss, test_accuracy = feed_data(batch, model, optimizer, False)
 
 			current_train_loss += train_loss
 			current_test_loss += test_loss
-			print("\t Training: accuracy: {} \t loss: {} \n\t Testing: accuracy: {} \t loss: {}".format(
-				train_accuracy,
-				train_loss,
-				test_accuracy,
-				test_loss))
+			# print("\t Training: accuracy: {} \t loss: {} \n\t Testing: accuracy: {} \t loss: {}".format(
+			# 	train_accuracy,
+			# 	train_loss,
+			# 	test_accuracy,
+			# 	test_loss))
 		train_loss_list.append(current_train_loss / len(sample_iter))
 		test_loss_list.append((current_test_loss / len(sample_iter)))
 	return [train_loss_list, test_loss_list]
@@ -143,7 +145,7 @@ def get_model(model_name):
 		pickle_in = open("{}_results.pickle".format(model_name), 'rb')
 		results = pickle.load(pickle_in)
 
-		print("Model '{}' Loaded!".format(model_name))
+		tqdm.write("Model '{}' Loaded!".format(model_name))
 
 	except FileNotFoundError:
 		rnn = RNN(n_hidden=hidden_units)
@@ -154,7 +156,7 @@ def get_model(model_name):
 		optimizer = optimizers.SGD()
 		optimizer.setup(model)
 
-		print("Model not found! Starting training ...")
+		tqdm.write("Model not found! Starting training ...")
 		results = train_network(train_iter, rnn, model, optimizer)
 
 		with open('{}_rnn.pickle'.format(model_name), 'wb') as f:
@@ -177,10 +179,10 @@ def get_model(model_name):
 
 
 if __name__ == "__main__":
-	n_epochs = 10
+	n_epochs = 25
 	batch_size = 100
-	train_data_size = 1000
-	hidden_units = 30
+	train_data_size = 3000
+	hidden_units = 50
 
 	train_data = create_data(n=train_data_size)
 	test_data = create_data(n=100)
