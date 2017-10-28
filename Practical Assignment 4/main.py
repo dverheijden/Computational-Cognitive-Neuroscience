@@ -119,5 +119,5 @@ def compare(X, X1, X2):
 
 
 x, x1 = exercise_1()
-x2 = exercise_2(True)
+x2 = exercise_2()
 compare(x, x1, x2)
