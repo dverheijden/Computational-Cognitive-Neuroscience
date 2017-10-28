@@ -34,7 +34,8 @@ def exercise_1(plot=False):
 	Y = raw['Y']
 	X = raw['X']
 
-	X = normalize(X)
+	[X, X_mean, X_std] = handcrafted_norm(X)
+	print(X)
 	Y = normalize(Y)
 
 	X_train, X_test, Y_train, Y_test = split_data(X, Y, shuffle=False)
@@ -43,7 +44,8 @@ def exercise_1(plot=False):
 	reg.fit(Y_train, X_train)
 
 	X_pred = reg.predict(Y_test)
-
+	X_pred = (X_pred * X_std) + X_mean
+	X_test = (X_test * X_std) + X_mean
 	if plot:
 		for i in range(20):
 			show_image(X_pred, i)
@@ -58,9 +60,14 @@ def exercise_2(plot=False):
 	X = raw['X']
 	X_prior = raw['prior']
 
-	X = normalize(X)
-	Y = normalize(Y)
-	X_prior = normalize(X_prior)
+	[X, X_mean, X_std] = handcrafted_norm(X)
+
+	Y_mean = np.mean(Y, axis=0)
+	Y = (Y - Y_mean) 
+	Y_std = np.std(Y, axis=0)
+	Y = np.nan_to_num(Y / Y_std)
+
+	X_prior = normalize(X_prior) # We are not interested in this data, so we can let scipy handle the normalization?
 
 	X_train, X_test, Y_train, Y_test = split_data(X, Y, shuffle=False)
 
@@ -85,14 +92,20 @@ def exercise_2(plot=False):
 	u_post = np.linalg.inv(u_post)
 	u_post = np.dot(u_post, reg.coef_.T)
 	u_post = np.dot(u_post, sigma_inv)
-	res = [np.dot(u_post, y) for y in Y_test]
 
+	res = np.array([np.dot(u_post, y) for y in Y_test])
+	res = (res * X_std) + X_mean
+	
 	if plot:
 		for i in range(len(res)):
 			show_image(res, i)
 
 	return res
 
+def handcrafted_norm(X):
+	mean = np.mean(X, axis=0)
+	std = np.std(X - mean, axis=0)
+	return [np.nan_to_num((X - mean) / std), mean, std]
 
 def compare(X, X1, X2):
 	for i in range(X1.shape[0]):
@@ -106,5 +119,5 @@ def compare(X, X1, X2):
 
 
 x, x1 = exercise_1()
-x2 = exercise_2()
+x2 = exercise_2(True)
 compare(x, x1, x2)
