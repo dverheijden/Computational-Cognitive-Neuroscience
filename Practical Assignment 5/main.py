@@ -10,7 +10,7 @@ env = EvidenceEnv(n=2, p=0.75)
 
 # define agent
 agent = agents.TabularQAgent(env)
-
+agent = agents.NeuralAgent(env)
 # reset environment and agent
 obs = env.reset()
 reward = None

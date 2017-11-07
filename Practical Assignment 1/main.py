@@ -37,6 +37,8 @@ def feed_data(random_iter, update):
 
     for data in random_iter:
         x = data[0]
+        print(x)
+        return
         labels = data[1]
         if update:
             optimizer.update(model, x, labels)
