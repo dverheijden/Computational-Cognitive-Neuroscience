@@ -7,7 +7,7 @@ class Regressor(Chain):
 	General implementation of a Regressor class
 	"""
 
-	compute_accuracy = True
+	compute_accuracy = False
 
 	def __init__(self, predictor, lossfun, accfun):
 		"""

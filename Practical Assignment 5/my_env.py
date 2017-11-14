@@ -73,7 +73,7 @@ class EvidenceEnv(object):
         :return:
         """
 
-        print(self._state)
+        # print("State: " + str(self._state))
 
     def close(self):
         """
@@ -104,3 +104,7 @@ class EvidenceEnv(object):
         _b = [0 for _ in range(b_len - len(_b))] + _b
 
         return _b
+
+    def toBinary(self, obs):
+        intValue = self.asint(obs)
+        return self.asbinary(intValue, 2)

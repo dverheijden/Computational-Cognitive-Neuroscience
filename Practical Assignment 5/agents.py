@@ -2,6 +2,7 @@ import numpy as np
 from MLP import MLP
 from Regressor import Regressor
 from chainer import optimizers
+from chainer import functions as F
 
 
 class RandomAgent(object):
@@ -43,7 +44,7 @@ class TabularQAgent(object):
         """
 
         self.env = env
-        self.Q = np.ndarray([env.n_action**env.n_input, env.n_action])
+        self.Q = np.zeros((env.n_action**env.n_input, env.n_action)).astype(np.float32)
         self.alpha = alpha
         self.gamma = gamma
 
@@ -71,21 +72,32 @@ class TabularQAgent(object):
 
         self.Q[old_obs, a] = (1-self.alpha)*self.Q[old_obs, a] + self.alpha*(r + self.gamma*max_Q)
 
+
 class NeuralAgent(object):
-    def __init__(self, env):
+    def __init__(self, env, actualQ):
         """
         Args:
         env: an environment
         """
         n_hidden = 10
-        compute_accuracy = lambda y, t: 1 / abs(y - t)
-        compute_loss = lambda y, t: pow(y - t, 2)
+
         self.MLP = MLP(n_hidden, env.n_action)
-        self.model = Regressor(self.MLP, accfun=compute_accuracy, lossfun=compute_loss)
+        self.model = Regressor(self.MLP, lossfun=F.squared_error, accfun=None)
         self.env = env
+        self.Q = np.zeros((env.n_action ** env.n_input, env.n_action)).astype(np.float32)
+        self.actualQ = actualQ
 
         self.optimizer = optimizers.SGD()
         self.optimizer.setup(self.model)
+
+    def compute_loss(self, y, t):
+        """
+        We define the loss as the sum of the squared error between the actual and predicted Q values
+        :param y: predicted Q-values
+        :param t: actual Q-values
+        :return: loss
+        """
+        return sum(np.square(np.subtract(y, t)))
 
     def act(self, observation):
         """
@@ -94,7 +106,6 @@ class NeuralAgent(object):
         :param reward: reward gained from previous action; None indicates no reward because of initial state
         :return: action
         """
-
         x = self.model.predictor(observation).data
         action = np.argmax(x)
 
@@ -109,16 +120,11 @@ class NeuralAgent(object):
         :return:
         """
 
-        label = not a if r == 0 else a
+        newQ = self.model.predictor(old_obs).data
 
-        self.model(old_obs, label)
-        Q_max = Q_new[0,np.argmax(Q_new)]
+        _old_obs = self.env.asint(old_obs)
+        self.Q[_old_obs, 0] = newQ[0, 0]
+        self.Q[_old_obs, 1] = newQ[0, 1]
 
-        max_Q_new = Q_new[np.argmax(Q_new)]
-        self.model(old_obs, r + max_Q_new)
-         # MLP([0.0,1.0]) returnt iets van de vorm [0.123123, 0.123123] 
-         # de Q waarden.
-         # moeten we dan beide resultaten die worden verkregen updaten met old_obs?
-
-        pass
+        self.optimizer.update(self.model.lossfun, self.Q[_old_obs, :], self.actualQ[_old_obs, :])
 
