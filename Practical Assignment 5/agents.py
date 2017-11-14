@@ -1,6 +1,7 @@
 import numpy as np
 from MLP import MLP
 from Regressor import Regressor
+from chainer import optimizers
 
 
 class RandomAgent(object):
@@ -83,21 +84,19 @@ class NeuralAgent(object):
         self.model = Regressor(self.MLP, accfun=compute_accuracy, lossfun=compute_loss)
         self.env = env
 
-        # ?
-        optimizer = optimizers.SGD()
-        optimizer.setup(model)
+        self.optimizer = optimizers.SGD()
+        self.optimizer.setup(self.model)
 
     def act(self, observation):
         """
         Act based on observation and train agent on cumulated reward (return)
         :param observation: new observation
         :param reward: reward gained from previous action; None indicates no reward because of initial state
-        :return: action (Variable)
+        :return: action
         """
 
-        # if observation= [0,0], the MLP returns [0,0]
-        x = self.MLP(observation).data
-        action = np.argmax(x) # 
+        x = self.model.predictor(observation).data
+        action = np.argmax(x)
 
         return action
 
@@ -109,10 +108,10 @@ class NeuralAgent(object):
         :param new_obs: new observation
         :return:
         """
-        # todo: fix het updatestuk
-        # ik snap nog niet helemaal hoe de Regressor werkt geloof ik
-        Q_new = self.MLP(new_obs).data
 
+        label = not a if r == 0 else a
+
+        self.model(old_obs, label)
         Q_max = Q_new[0,np.argmax(Q_new)]
 
         max_Q_new = Q_new[np.argmax(Q_new)]

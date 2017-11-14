@@ -9,7 +9,7 @@ n_iter = 1000
 env = EvidenceEnv(n=2, p=0.75)
 
 # define agent
-agent = agents.TabularQAgent(env)
+# agent = agents.TabularQAgent(env)
 agent = agents.NeuralAgent(env)
 # reset environment and agent
 obs = env.reset()
@@ -20,6 +20,7 @@ cum_R = []
 for step in range(n_iter):
 	env.render()
 	action = agent.act(obs)
+	print("Action: " + str(action))
 	_obs, reward, done, _ = env.step(action)
 	# no training involved for random agent
 	agent.train(action, obs, reward, _obs)

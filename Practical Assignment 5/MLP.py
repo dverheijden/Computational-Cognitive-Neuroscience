@@ -22,6 +22,6 @@ class MLP(Chain):
         :param x: Data
         :return: Last Link of the MLP
         """
-        layer_hidden = F.relu(self.l1(np.asmatrix([observation])))
+        layer_hidden = F.relu(self.l1(np.array([observation])))
         layer_output = self.l2(layer_hidden)
         return layer_output
