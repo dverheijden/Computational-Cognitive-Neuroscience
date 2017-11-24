@@ -16,13 +16,12 @@ class Model(Chain):
 		:param accfun: accuracy function
 		"""
 		super(Model, self).__init__()
-		self.lossfun = lossfun
-		self.accfun = accfun
-		self.y = None
-		self.loss = None
-		self.accuracy = None
-
 		with self.init_scope():
+			self.lossfun = lossfun
+			self.accfun = accfun
+			self.y = None
+			self.loss = None
+			self.accuracy = None
 			self.predictor = predictor
 
 	def __call__(self, x, t):
