@@ -38,7 +38,7 @@ class DiscriminativeMLP(Chain):
 	def __init__(self, n_hidden):
 		super(DiscriminativeMLP, self).__init__()
 		with self.init_scope():
-			self.fc1 = L.Linear(None, n_hidden)  # Fully Connected Layer
+			self.fc1 = L.Linear(784, n_hidden)  # Fully Connected Layer
 			self.fc2 = L.Linear(n_hidden, n_hidden)
 			self.fc3 = L.Linear(n_hidden, 1)
 
@@ -53,7 +53,7 @@ class Discriminative(Chain):
 	def __init__(self, n_feature_maps=5, ksize=5):
 		super(Discriminative, self).__init__()
 		with self.init_scope():
-			self.conv = L.Convolution2D(None, n_feature_maps, ksize=ksize)  # Convolutional Layer
+			self.conv = L.Convolution2D(1, n_feature_maps, ksize=ksize)  # Convolutional Layer
 			self.lin = L.Linear(None, 1)  # Linear Readout Layer
 
 	def __call__(self, x):
