@@ -6,6 +6,8 @@ import chainer.optimizers as optimizers
 import numpy as np
 from tqdm import tqdm
 
+import matplotlib.pyplot as plt
+
 
 def lossfun_generative(y, t):
 	return F.log(1 - t)
@@ -31,25 +33,38 @@ def train():
 			# we need a random input, otherwise we will be generating the same number each time
 			gen_input = np.float32(np.random.uniform(size=[batch_size, 1]))
 
-			x_fake = generative_model.predictor(gen_input).data.reshape(batch_size,1,28,28) 
+			generation = generative_model.predictor(gen_input) # we need to keep the variable type around, to compute stuff
+			x_fake = generation.data.reshape(batch_size,1,28,28) 
 			t_fake = np.ones( shape=(batch_size,1,1), dtype=np.int32)
 
-			predictions = np.empty(shape=(50,1))
+			predictions = np.empty(shape=(batch_size,1,1)) # i dont get how these shapes work?
 			for i in range(batch_size): # make the 50 predictions:
 				predictions[i] = discriminative_model(x_fake[i], t_fake[i]).data
 
 			discriminative_optimizer.update() # weet niet zeker of dit werkt
 			# now get the correctly and incorrectly classified numbers in order to train the generator
 			# hoe kunnen we nu het generator model updaten aan de hand van de gediscriminate predicionts?
-
+			
+			loss_gen = F.sigmoid_cross_entropy(np.float32(predictions), t_fake) / batch_size
+			generative_optimizer.target.cleargrads()
+			loss_gen.backward()
+			generative_optimizer.update()
 			# generative_optimizer.update()
 		# Dit werkt!
 		# print(discriminative_model.predictor(x_real))
 		
+	gen_input = np.float32(np.random.uniform(size=[1, 1]))
+	generation = generative_model.predictor(gen_input) # we need to keep the variable type around, to compute stuff
+
+	plt.imshow(np.reshape(generation.data, newshape=[28, 28]).transpose())
+	plt.show()
+
+	
+		
 
 
 if __name__ == "__main__":
-	n_iter = 20
+	n_iter = 10
 	batch_size = 50
 	train_data, test_data = get_mnist(n_train=1000, n_test=100, with_label=True, classes=[0], n_dim=3)
 	train_iter = RandomIterator(train_data, batch_size)
