@@ -1,70 +1,65 @@
-from utils import get_mnist, RandomIterator
-import networks
-from Model import Model
 import chainer.functions as F
 import chainer.optimizers as optimizers
+import matplotlib.pyplot as plt
 import numpy as np
 from tqdm import tqdm
 
-import matplotlib.pyplot as plt
+import networks
+from Model import Model
+from utils import get_mnist, RandomIterator
 
 
-def lossfun_generative(y, t):
-	return F.log(1 - t)
+def lossfun_generative(pred_discriminator, t):
+	"""
+	Loss has to be minimized, train generative model to fool discriminator
+	i.e. let discriminator predict ones
+	:param pred_discriminator:
+	:return:
+	"""
+	return sum(F.log(t - pred_discriminator))
 
-
-def lossfun_discriminative_fake(y, t):
-	return pow(y - t, 2)
-
-
-def lossfun_discriminative_real(y, t):
-	return pow(y - t, 2)
 
 def train():
+	loss_disc = []
+	loss_gen = []
 	for _ in tqdm(range(n_iter)):
+		loss_disc_current = 0
+		loss_gen_current = 0
 		for data in train_iter:
-			# Train D on real+fake
+			# Train D on real data
 			x_real = data[0]
-			t_real = data[1].reshape(batch_size,1) # to have the same shape as the predictions of the discriminator
-			# t_real = np.ones([batch_size], dtype=np.int32)
+			t_real = np.ones(shape=(batch_size, 1), dtype=np.int32)
 
 			discriminative_optimizer.update(discriminative_model, x_real, t_real)
+			loss_disc_current += discriminative_model.loss
 
-			# we need a random input, otherwise we will be generating the same number each time
-			gen_input = np.float32(np.random.uniform(size=[batch_size, 1]))
+			# Train D on fake data
+			gen_input = np.float32(np.random.uniform(size=(batch_size, 1)))
+			x_fake = generative_model.predict(gen_input)
+			t_fake = np.zeros(shape=(batch_size, 1), dtype=np.int32)
 
-			generation = generative_model.predictor(gen_input) # we need to keep the variable type around, to compute stuff
-			x_fake = generation.data.reshape(batch_size,1,28,28) 
-			t_fake = np.ones( shape=(batch_size,1,1), dtype=np.int32)
+			discriminative_optimizer.update(discriminative_model, x_fake, t_fake)
+			loss_disc_current += discriminative_model.loss
 
-			predictions = np.empty(shape=(batch_size,1,1)) # i dont get how these shapes work?
-			for i in range(batch_size): # make the 50 predictions:
-				predictions[i] = discriminative_model(x_fake[i], t_fake[i]).data
+			# Train G
+			predictions = discriminative_model.y
+			generative_optimizer.update(generative_model, gen_input, np.ones(shape=(batch_size, 1), dtype=np.int32))
+			loss_gen_current += generative_model.loss
 
-			discriminative_optimizer.update() # weet niet zeker of dit werkt
-			# now get the correctly and incorrectly classified numbers in order to train the generator
-			# hoe kunnen we nu het generator model updaten aan de hand van de gediscriminate predicionts?
-			
-			loss_gen = F.sigmoid_cross_entropy(np.float32(predictions), t_fake) / batch_size
-			generative_optimizer.target.cleargrads()
-			loss_gen.backward()
-			generative_optimizer.update()
-			# generative_optimizer.update()
-		# Dit werkt!
-		# print(discriminative_model.predictor(x_real))
-		
+		loss_disc.append(loss_disc_current.data/(2*train_iter.idx))
+		loss_gen.append(loss_gen_current.data/train_iter.idx)
+
 	gen_input = np.float32(np.random.uniform(size=[1, 1]))
-	generation = generative_model.predictor(gen_input) # we need to keep the variable type around, to compute stuff
+	generation = generative_model.predict(gen_input)  # we need to keep the variable type around, to compute stuff
 
-	plt.imshow(np.reshape(generation.data, newshape=[28, 28]).transpose())
+	# plt.imshow(np.reshape(generation.data, newshape=[28, 28]).transpose())
+	plt.plot(loss_disc)
+	plt.plot(loss_gen)
 	plt.show()
-
-	
-		
 
 
 if __name__ == "__main__":
-	n_iter = 10
+	n_iter = 20
 	batch_size = 50
 	train_data, test_data = get_mnist(n_train=1000, n_test=100, with_label=True, classes=[0], n_dim=3)
 	train_iter = RandomIterator(train_data, batch_size)
@@ -74,7 +69,7 @@ if __name__ == "__main__":
 	generative_net = networks.GenerativeMLP(n_hidden=20)
 
 	discriminative_model = Model(discriminative_net, lossfun=F.sigmoid_cross_entropy, accfun=F.accuracy)
-	generative_model = Model(generative_net, lossfun=None, accfun=None)
+	generative_model = Model(generative_net, lossfun=F.sigmoid_cross_entropy, accfun=None)
 
 	discriminative_optimizer = optimizers.SGD()
 	discriminative_optimizer.setup(discriminative_model)
@@ -82,4 +77,3 @@ if __name__ == "__main__":
 	generative_optimizer.setup(generative_model)
 
 	train()
-

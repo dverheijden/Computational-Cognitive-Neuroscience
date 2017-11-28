@@ -35,3 +35,8 @@ class Model(Chain):
 			self.accuracy = self.accfun(self.y, t)
 			reporter.report({'accuracy': self.accuracy}, self)
 		return self.loss
+
+	def predict(self, x):
+		self.y = self.predictor(x)
+
+		return self.y
