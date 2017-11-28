@@ -10,6 +10,12 @@ from utils import get_mnist, RandomIterator
 
 
 def train():
+	discriminative_optimizer = optimizers.SGD()
+	discriminative_optimizer.setup(discriminative_net)
+
+	generative_optimizer = optimizers.SGD()
+	generative_optimizer.setup(generative_net)
+
 	loss_disc = []
 	loss_gen = []
 	for _ in tqdm(range(n_iter)):
@@ -23,9 +29,6 @@ def train():
 			gen_input = np.float32(np.random.uniform(size=(batch_size, 1)))
 			x_fake = generative_net(gen_input)
 			t_fake = discriminative_net(x_fake)
-
-			# generative_loss = F.log(t_fake)
-			
 
 			# Backprop
 			generative_loss = F.softmax_cross_entropy(t_fake, np.ones(shape=(batch_size), dtype=np.int32))
@@ -62,22 +65,16 @@ def train():
 
 
 if __name__ == "__main__":
-	n_iter = 100
+	n_iter = 500
 	batch_size = 50
 	train_data, test_data = get_mnist(n_train=1000, n_test=100, with_label=False, classes=[0], n_dim=3)
 	train_iter = RandomIterator(train_data, batch_size)
 	test_iter = RandomIterator(test_data, batch_size)
 
-	# discriminative_net = networks.DiscriminativeMLP(n_hidden=20)
-	# generative_net = networks.GenerativeMLP(n_hidden=200)
+	discriminative_net = networks.DiscriminativeMLP(n_hidden=20)
+	generative_net = networks.GenerativeMLP(n_hidden=200)
 
-	discriminative_net = networks.Discriminative()
-	generative_net = networks.Generative(256)
-
-	discriminative_optimizer = optimizers.SGD()
-	discriminative_optimizer.setup(discriminative_net)
-
-	generative_optimizer = optimizers.SGD()
-	generative_optimizer.setup(generative_net)
+	discriminative_net = networks.DiscriminativeConvolutional().to_gpu()
+	generative_net = networks.GenerativeDeconvolutional(256).to_gpu()
 
 	train()

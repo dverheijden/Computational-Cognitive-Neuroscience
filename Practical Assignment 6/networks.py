@@ -44,9 +44,9 @@ def convdim(dims, scale, n):
 	return n, dims[0] // scale, dims[1] // scale
 
 
-class Generative(Chain):
+class GenerativeDeconvolutional(Chain):
 	def __init__(self, n_hidden):
-		super(Generative, self).__init__()
+		super(GenerativeDeconvolutional, self).__init__()
 		with self.init_scope():
 			self.n_hidden = n_hidden
 			self.fc0 = L.Linear(None, n_hidden)  # Fully Connected Layer
@@ -67,9 +67,9 @@ class Generative(Chain):
 		return h
 
 
-class Discriminative(Chain):
+class DiscriminativeConvolutional(Chain):
 	def __init__(self, n_feature_maps=5):
-		super(Discriminative, self).__init__()
+		super(DiscriminativeConvolutional, self).__init__()
 		with self.init_scope():
 			self.conv = L.Convolution2D(None, n_feature_maps, ksize=5)  # Convolutional Layer
 			self.lin = L.Linear(None, 2)  # Linear Readout Layer
