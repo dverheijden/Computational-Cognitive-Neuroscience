@@ -16,6 +16,7 @@ def train():
 		loss_disc_current = 0
 		loss_gen_current = 0
 		for data in train_iter:
+		
 			x_real = data
 			t_real = discriminative_net(x_real)
 
@@ -23,14 +24,17 @@ def train():
 			x_fake = generative_net(gen_input)
 			t_fake = discriminative_net(x_fake)
 
-			generative_loss = F.sigmoid_cross_entropy(t_fake, np.ones(shape=(batch_size, 1), dtype=np.int32))
-			discriminative_loss = F.sigmoid_cross_entropy(t_fake, np.zeros(shape=(batch_size, 1), dtype=np.int32))
-			discriminative_loss += F.sigmoid_cross_entropy(t_real, np.ones(shape=(batch_size, 1), dtype=np.int32))
-			discriminative_loss /= 2
+			# generative_loss = F.log(t_fake)
+			
 
 			# Backprop
+			generative_loss = F.softmax_cross_entropy(t_fake, np.ones(shape=(batch_size), dtype=np.int32))
+			discriminative_loss = F.softmax_cross_entropy(t_fake, np.zeros(shape=(batch_size), dtype=np.int32))
+			discriminative_loss += F.softmax_cross_entropy(t_real, np.ones(shape=(batch_size), dtype=np.int32))
+			discriminative_loss /= 2
+			
 			generative_net.cleargrads()
-			generative_loss.backward()
+			generative_loss.backward() # recompute the grads
 			generative_optimizer.update()
 
 			discriminative_net.cleargrads()
@@ -46,10 +50,17 @@ def train():
 	gen_input = np.float32(np.random.uniform(size=[1, 1]))
 	generation = generative_net(gen_input)  # we need to keep the variable type around, to compute stuff
 
-	# plt.imshow(np.reshape(generation.data, newshape=[28, 28]).transpose())
-	plt.plot(loss_disc)
+	plt.plot(loss_disc, label="disc")
 	plt.plot(loss_gen)
 	plt.show()
+	for i in range(4):
+		gen_input = np.float32(np.random.uniform(size=[1, 1]))
+		generation = generative_net(gen_input)  # we need to keep the variable type around, to compute stuff
+
+		plt.imshow(np.reshape(generation.data, newshape=[28, 28]).transpose())
+		plt.show()
+	# plt.show()
+
 
 
 if __name__ == "__main__":
@@ -60,11 +71,13 @@ if __name__ == "__main__":
 	test_iter = RandomIterator(test_data, batch_size)
 
 	discriminative_net = networks.DiscriminativeMLP(n_hidden=20)
-	generative_net = networks.GenerativeMLP(n_hidden=20)
+	generative_net = networks.GenerativeMLP(n_hidden=200)
 
 	discriminative_optimizer = optimizers.SGD()
 	discriminative_optimizer.setup(discriminative_net)
+
 	generative_optimizer = optimizers.SGD()
 	generative_optimizer.setup(generative_net)
+	
 
 	train()

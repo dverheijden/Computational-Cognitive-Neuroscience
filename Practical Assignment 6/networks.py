@@ -40,7 +40,7 @@ class DiscriminativeMLP(Chain):
 		with self.init_scope():
 			self.fc1 = L.Linear(784, n_hidden)  # Fully Connected Layer
 			self.fc2 = L.Linear(n_hidden, n_hidden)
-			self.fc3 = L.Linear(n_hidden, 1)
+			self.fc3 = L.Linear(n_hidden, 2)
 
 	def __call__(self, x):
 		fc1_out = F.elu(self.fc1(x))
