@@ -54,7 +54,7 @@ class Discriminative(Chain):
 		super(Discriminative, self).__init__()
 		with self.init_scope():
 			self.conv = L.Convolution2D(1, n_feature_maps, ksize=ksize)  # Convolutional Layer
-			self.lin = L.Linear(None, 1)  # Linear Readout Layer
+			self.lin = L.Linear(None, 2)  # Linear Readout Layer
 
 	def __call__(self, x):
 		conv_output = F.relu(self.conv(x))
