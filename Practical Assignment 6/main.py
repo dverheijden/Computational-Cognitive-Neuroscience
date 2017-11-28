@@ -65,8 +65,11 @@ if __name__ == "__main__":
 	train_iter = RandomIterator(train_data, batch_size)
 	test_iter = RandomIterator(test_data, batch_size)
 
-	discriminative_net = networks.DiscriminativeMLP(n_hidden=20)
-	generative_net = networks.GenerativeMLP(n_hidden=20)
+	# discriminative_net = networks.DiscriminativeMLP(n_hidden=20)
+	# generative_net = networks.GenerativeMLP(n_hidden=20)
+
+	discriminative_net = networks.Discriminative()
+	generative_net = networks.Generative(64)
 
 	discriminative_model = Model(discriminative_net, lossfun=F.sigmoid_cross_entropy, accfun=F.accuracy)
 	generative_model = Model(generative_net, lossfun=F.sigmoid_cross_entropy, accfun=None)

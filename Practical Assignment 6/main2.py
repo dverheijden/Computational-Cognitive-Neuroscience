@@ -34,7 +34,7 @@ def train():
 			discriminative_loss /= 2
 			
 			generative_net.cleargrads()
-			generative_loss.backward() # recompute the grads
+			generative_loss.backward()  # recompute the grads
 			generative_optimizer.update()
 
 			discriminative_net.cleargrads()
@@ -47,11 +47,11 @@ def train():
 		loss_gen.append(loss_gen_current/train_iter.idx)
 		loss_disc.append(loss_disc_current/train_iter.idx)
 
-	gen_input = np.float32(np.random.uniform(size=[1, 1]))
-	generation = generative_net(gen_input)  # we need to keep the variable type around, to compute stuff
-
-	plt.plot(loss_disc, label="disc")
-	plt.plot(loss_gen)
+	plt.plot(loss_disc, label="Discriminator Loss")
+	plt.plot(loss_gen, label="Generator Loss")
+	plt.legend()
+	plt.ylabel("Loss")
+	plt.xlabel("Epoch")
 	plt.show()
 	for i in range(4):
 		gen_input = np.float32(np.random.uniform(size=[1, 1]))
@@ -59,25 +59,25 @@ def train():
 
 		plt.imshow(np.reshape(generation.data, newshape=[28, 28]).transpose())
 		plt.show()
-	# plt.show()
-
 
 
 if __name__ == "__main__":
-	n_iter = 20
+	n_iter = 100
 	batch_size = 50
 	train_data, test_data = get_mnist(n_train=1000, n_test=100, with_label=False, classes=[0], n_dim=3)
 	train_iter = RandomIterator(train_data, batch_size)
 	test_iter = RandomIterator(test_data, batch_size)
 
-	discriminative_net = networks.DiscriminativeMLP(n_hidden=20)
-	generative_net = networks.GenerativeMLP(n_hidden=200)
+	# discriminative_net = networks.DiscriminativeMLP(n_hidden=20)
+	# generative_net = networks.GenerativeMLP(n_hidden=200)
+
+	discriminative_net = networks.Discriminative()
+	generative_net = networks.Generative(256)
 
 	discriminative_optimizer = optimizers.SGD()
 	discriminative_optimizer.setup(discriminative_net)
 
 	generative_optimizer = optimizers.SGD()
 	generative_optimizer.setup(generative_net)
-	
 
 	train()
