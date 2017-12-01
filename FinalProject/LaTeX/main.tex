@@ -1,0 +1,47 @@
+\documentclass{article}
+\usepackage{a4wide}
+\usepackage[utf8]{inputenc}
+\usepackage[table,xcdraw]{xcolor}
+\usepackage{ltablex} % table stretch multiple pages
+\usepackage{booktabs} % Fancy table lines
+\usepackage[numbers]{natbib}
+\usepackage{graphicx}
+\usepackage{enumerate}
+\usepackage{array}
+\usepackage[]{mathtools}
+\usepackage{textcomp}
+\usepackage{gensymb}
+\usepackage{float}
+\usepackage{amsmath}
+\usepackage{dsfont}
+\usepackage{csquotes}
+\newcolumntype{b}{X}
+\newcolumntype{s}{>{\hsize=.5\hsize}X}
+\usepackage{pdfpages}
+\usepackage{hyperref} % For links in documents and to the web
+
+\newcommand{\q}[1]{``#1''} %matching apostrophes
+
+\title{Project Proposal \\ Progressive Neural Networks}
+\author{Dennis Verheijden s4455770 \and Joost}
+
+\begin{document}
+\maketitle
+\section*{Project Description}
+One of the many unsolved problems of Artificial Intelligence is catastrophic forgetting, the knowledge of task \textit{A} is forgotten when trained on task \textit{B}. This is what we aim to address in this project.
+
+We will do so by implementing a Neural Network architecture proposed by Google Deepmind in 2016. Here they proposes a novel way to tackle this problem by using a Neural Network architecture that they called a Progressive Neural Network (PNN) \cite{rusu2016progressive}. For our project we will be implementing this type of network and we will train it to play atari games, using the openAi gym \cite{1606.01540}.
+
+We plan on implementing it in Chainer \cite{chainer_learningsys2015}. With a network similar in the original paper, where they use two convolutional layers and one fully connect layer \cite{1606.01540}. The latter being tuned toward the task domain. The input to the neural networks are the raw pixel values of the rendered openAI scene.
+
+We aim to replicate some of the papers findings by:
+\begin{enumerate}[1.]
+\item Implement a Progressive Neural Network
+\item Train it on a source domain, which will be a Atari game (Pong probably)
+\item Then train it on Pong variants and find out whether we can replicate the transfer between layers (using .
+\end{enumerate}
+
+\bibliography{bibliography}
+\bibliographystyle{plainnat}
+
+\end{document}

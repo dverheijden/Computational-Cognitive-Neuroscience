@@ -6,3 +6,11 @@
 **/*.pickle
 .vscode/
 **/*.mat
+
+# .gitignore LaTeX
+**/*.aux
+**/*.bbl
+**/*.blg
+**/*.log
+**/*.out
+**/*.synctex.gz
