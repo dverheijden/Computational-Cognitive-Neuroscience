@@ -38,7 +38,11 @@ We aim to replicate some of the papers findings by:
 \begin{enumerate}[1.]
 \item Implement a Progressive Neural Network
 \item Train it on a source domain, which will be a Atari game (Pong probably)
-\item Then train it on Pong variants and find out whether we can replicate the transfer between layers (using .
+\item Then train it on Pong variants and find out whether we can replicate the papers findings:
+    \begin{itemize}
+    \item Does the Progressive Neural Network converge faster than a regular Neural Network (i.e. is there transfer of knowledge)
+    \item Try to compute the Average Pertubation Sensitivity to replicate the transfer matrix.
+    \end{itemize}
 \end{enumerate}
 
 \bibliography{bibliography}
