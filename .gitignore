@@ -14,3 +14,8 @@
 **/*.log
 **/*.out
 **/*.synctex.gz
+
+# ignore git repos that are needed to use openaigym + universe / compile everything
+go-vncdriver
+gym
+universe

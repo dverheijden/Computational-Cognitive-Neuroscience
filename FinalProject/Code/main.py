@@ -14,22 +14,32 @@ def train():
 	print("action space:", env.action_space)
 
 	obs = env.reset()
-	env.render()
-	print('initial observation:', obs)
+	
+	i = 0
+	while True:
+		i+=1
+		env.render()
+		# print('initial observation:', obs)
 
-	action = env.action_space.sample()
-	obs, r, done, info = env.step(action)
+		obs = obs.reshape((1,3,210,160))
+		action = np.argmax(prog_net(obs, 1).data[0])
+		print(action)
 
-	print("next observation:,", obs)
-	print("reward:", r)
-	print("done:", done)
-	print("info:", info)
+		# action = env.action_space.sample()
+		obs, r, done, info = env.step(action)
+		if done:
+			env.reset()
+		# print("next observation:,", obs)
+		# print("reward:", r)
+		# print("done:", done)
+		# print("info:", info)
 
 
 if __name__ == "__main__":
 	n_iter = 20
 
-	prog_net = networks.ProgNet(n_actions=2)
+	
+	prog_net = networks.ProgNet(n_actions=6)
 
 	prog_model = Model(prog_net, lossfun=F.sigmoid_cross_entropy, accfun=F.accuracy)
 
