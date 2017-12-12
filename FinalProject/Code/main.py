@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from tqdm import tqdm
 import gym
+import atari_py
 import networks
 from model import Model
 
@@ -16,17 +17,39 @@ def train():
 	obs = env.reset()
 	
 	i = 0
+	eta = 0.1
+
 	while True:
 		i+=1
 		env.render()
 		# print('initial observation:', obs)
 
 		obs = obs.reshape((1,3,210,160))
-		action = np.argmax(prog_net(obs, 1).data[0])
-		print(action)
+		# obs = obs.reshape((1,3,200,200))
+
+		action = prog_net(obs, 1)
+		
+		do_action = np.argmax(prog_net(obs, 1).data[0])
+		# print(action)
 
 		# action = env.action_space.sample()
-		obs, r, done, info = env.step(action)
+		obs, reward, done, info = env.step(do_action)
+
+		q_value = action
+		new_q = q_value.data
+		new_q[0][do_action] *= eta
+		new_q[0][do_action] += reward
+
+		# print(q_value)
+		# print(new_q)
+		loss = F.mean_squared_error(q_value, new_q)
+
+		prog_net.cleargrads()
+		loss.backward()
+		prog_optimizer.update()
+
+		print(reward)
+		
 		if done:
 			env.reset()
 		# print("next observation:,", obs)
