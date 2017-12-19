@@ -17,9 +17,10 @@ def summary(rewards):
     plt.xlabel("Game")
     plt.ylabel("Reward")
     plt.title("Reward as a function of nr. of games")
-    if headless:
+    plt.savefig("result/summary_{}.png".format(time.strftime("%d-%m-%Y %H:%M:%S")), format="png")
+
+    if not headless:
         plt.show()
-    plt.savefig("result/summary_{}".format(time.strftime("%d/%m/%Y")), format="png")
 
 
 def train():
@@ -34,10 +35,11 @@ def train():
     rewards = []
 
     cumul_reward = 0
-    n_epoch = 100
+    n_epoch = 3
     for i in tqdm(range(n_epoch)):
         while True:
-            # env.render()
+            if not headless:
+                env.render()
             # print('initial observation:', obs)
             
             obs = obs.reshape((1,3,210,160))
@@ -93,6 +95,8 @@ def run_saved(filename):
 
 
 if __name__ == "__main__":
+    import os
+    print(os.listdir('.'))
     env = gym.make("Pong-v0")
     headless = False
     # env = gym.make("SpaceInvaders-v4")
