@@ -2,8 +2,6 @@ import chainer.functions as F
 import chainer.cuda as cuda
 import chainer.optimizers as optimizers
 import matplotlib as mpl
-mpl.use('Agg')
-import matplotlib.pyplot as plt
 from chainer import serializers
 import numpy
 import numpy as np
@@ -13,7 +11,7 @@ import atari_py
 import networks
 from model import Model
 import time
-
+import argparse
 
 def summary(rewards):
     plt.plot(rewards)
@@ -36,7 +34,6 @@ def train():
     rewards = []
 
     cumul_reward = 0
-    n_epoch = 1200
     for i in tqdm(range(n_epoch)):
         obs = np.array(env.reset())
         while True:
@@ -101,20 +98,54 @@ def run_saved(filename):
     return serializers.load_hdf5(filename, networks.ProgNet)
 
 
+def str2bool(v):
+    if v.lower() in ('yes', 'true', 't', 'y', '1'):
+        return True
+    elif v.lower() in ('no', 'false', 'f', 'n', '0'):
+        return False
+    else:
+        raise argparse.ArgumentTypeError('Boolean value expected.')
+
+
 if __name__ == "__main__":
-    if cuda.available:
+    parser = argparse.ArgumentParser(description="Progressive Neural Network")
+    parser.add_argument("--model-name", dest="model_path",
+                        help="Path to a pretrained model")
+    parser.add_argument("--output", dest="outfile",
+                        help="Path to output model")
+    parser.add_argument("--env", dest="env",
+                        help="Environment Name", default="Pong-v0")
+    parser.add_argument("--hidden", dest="n_hidden", type=int, default=256,
+                        help="Amount of hidden units")
+    parser.add_argument("--feature-maps", dest="n_feature_maps", type=int, default=12,
+                        help="Amount of feature maps")
+    parser.add_argument("--epochs", dest="n_epoch", type=int, default=20,
+                        help="Amount of epochs")
+    parser.add_argument("--headless", type=str2bool, nargs='?', const=True, default=True,
+                        help="Headless mode, supresses rendering and plotting")
+    args = parser.parse_args()
+
+    if cuda.available: # Server optimization
         import cupy as np
         np.cuda.Device(0).use()
-    env = gym.make("Pong-v0")
-    headless = True
+        mpl.use('Agg')
+
+    import matplotlib.pyplot as plt
+    env = gym.make(args.env)
+    headless = args.headless
     # env = gym.make("SpaceInvaders-v4")
 
     number_of_actions = env.action_space.n
-    n_iter = 20
     epsilon = 0.2
-
-    prog_model = Model(networks.ProgNet(n_actions=number_of_actions), lossfun=F.sigmoid_cross_entropy, accfun=F.accuracy)
-    # prog_model = run_saved('my_model.model')
+    n_epoch = args.n_epoch
+    if args.model_path:
+        prog_model = run_saved(args.model_path)
+    else:
+        prog_model = Model(
+            networks.ProgNet(n_actions=number_of_actions, n_feature_maps=args.n_feature_maps,
+                             n_hidden_units=args.n_hidden)
+            , lossfun=F.sigmoid_cross_entropy, accfun=F.accuracy
+        )
 
     if cuda.available:
         prog_model.to_gpu(0)
