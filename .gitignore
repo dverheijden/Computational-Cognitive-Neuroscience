@@ -19,3 +19,6 @@
 go-vncdriver
 gym
 universe
+
+# UNIX scripts
+**/*.sh

@@ -1,8 +1,11 @@
 import chainer.functions as F
 import chainer.cuda as cuda
 import chainer.optimizers as optimizers
+import matplotlib as mpl
+mpl.use('Agg')
 import matplotlib.pyplot as plt
 from chainer import serializers
+import numpy
 import numpy as np
 from tqdm import tqdm
 import gym
@@ -27,16 +30,15 @@ def train():
     print("observation space:", env.observation_space)
     print("action space:", env.action_space)
 
-    obs = env.reset()
-    
     i = 0
     eta = 0.1
 
     rewards = []
 
     cumul_reward = 0
-    n_epoch = 3
+    n_epoch = 1200
     for i in tqdm(range(n_epoch)):
+        obs = np.array(env.reset())
         while True:
             if not headless:
                 env.render()
@@ -46,11 +48,9 @@ def train():
             # obs = obs.reshape((1,3,200,200))
 
             action, do_action = compute_action(obs)
-            # print(action)
 
-            # action = env.action_space.sample()
             obs, reward, done, info = env.step(do_action)
-
+            obs = np.array(obs)
             q_value = action
             new_q = q_value.data
             new_q[0][do_action] *= eta
@@ -69,20 +69,27 @@ def train():
                 tqdm.write(str(cumul_reward))
                 rewards.append(cumul_reward)
                 cumul_reward = 0
-                env.reset()
                 break
 
         # print("next observation:,", obs)
         # print("reward:", r)
         # print("done:", done)
         # print("info:", info)
-    serializers.save_hdf5('my_model', prog_model)
+    serializers.save_hdf5('my_model.model', prog_model)
     summary(rewards)
 
 
 def compute_action(obs):
     action = prog_model.predict(obs, 1)
-    do_action = np.argmax(action.data[0])
+
+    if cuda.available:
+        do_action = 1
+        max_Q = -99999999
+        for index, Q in enumerate(action.data[0]):
+            if Q > max_Q:
+                do_action = index
+    else:
+        do_action = np.argmax(action.data[0])
 
     if epsilon > np.random.rand():
         do_action = env.action_space.sample()
@@ -95,10 +102,11 @@ def run_saved(filename):
 
 
 if __name__ == "__main__":
-    import os
-    print(os.listdir('.'))
+    if cuda.available:
+        import cupy as np
+        np.cuda.Device(0).use()
     env = gym.make("Pong-v0")
-    headless = False
+    headless = True
     # env = gym.make("SpaceInvaders-v4")
 
     number_of_actions = env.action_space.n
@@ -106,7 +114,7 @@ if __name__ == "__main__":
     epsilon = 0.2
 
     prog_model = Model(networks.ProgNet(n_actions=number_of_actions), lossfun=F.sigmoid_cross_entropy, accfun=F.accuracy)
-    # prog_model = run_saved('my_model')
+    # prog_model = run_saved('my_model.model')
 
     if cuda.available:
         prog_model.to_gpu(0)
