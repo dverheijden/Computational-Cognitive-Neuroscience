@@ -1,4 +1,5 @@
 import chainer.functions as F
+import chainer.cuda as cuda
 import chainer.optimizers as optimizers
 import matplotlib.pyplot as plt
 from chainer import serializers
@@ -8,6 +9,17 @@ import gym
 import atari_py
 import networks
 from model import Model
+import time
+
+
+def summary(rewards):
+    plt.plot(rewards)
+    plt.xlabel("Game")
+    plt.ylabel("Reward")
+    plt.title("Reward as a function of nr. of games")
+    if headless:
+        plt.show()
+    plt.savefig("result/summary_{}".format(time.strftime("%d/%m/%Y")), format="png")
 
 
 def train():
@@ -18,6 +30,9 @@ def train():
     
     i = 0
     eta = 0.1
+
+    rewards = []
+
     cumul_reward = 0
     n_epoch = 100
     for i in tqdm(range(n_epoch)):
@@ -43,30 +58,32 @@ def train():
             # print(new_q)
             loss = F.mean_squared_error(q_value, new_q)
 
-            prog_net.cleargrads()
+            prog_model.predictor.cleargrads()
             loss.backward()
             prog_optimizer.update()
 
             cumul_reward += reward
             if done:
                 tqdm.write(str(cumul_reward))
+                rewards.append(cumul_reward)
                 cumul_reward = 0
                 env.reset()
                 break
 
-        serializers.save_hdf5('my_net', prog_net)
         # print("next observation:,", obs)
         # print("reward:", r)
         # print("done:", done)
         # print("info:", info)
+    serializers.save_hdf5('my_model', prog_model)
+    summary(rewards)
+
 
 def compute_action(obs):
-    action = prog_net(obs, 1)
+    action = prog_model.predict(obs, 1)
     do_action = np.argmax(action.data[0])
 
     if epsilon > np.random.rand():
         do_action = env.action_space.sample()
-
 
     return action, do_action
 
@@ -77,16 +94,18 @@ def run_saved(filename):
 
 if __name__ == "__main__":
     env = gym.make("Pong-v0")
+    headless = False
     # env = gym.make("SpaceInvaders-v4")
 
     number_of_actions = env.action_space.n
     n_iter = 20
     epsilon = 0.2
 
-    prog_net = networks.ProgNet(n_actions=number_of_actions)
-    # prog_net = run_saved('my_net')
-    
-    prog_model = Model(prog_net, lossfun=F.sigmoid_cross_entropy, accfun=F.accuracy)
+    prog_model = Model(networks.ProgNet(n_actions=number_of_actions), lossfun=F.sigmoid_cross_entropy, accfun=F.accuracy)
+    # prog_model = run_saved('my_model')
+
+    if cuda.available:
+        prog_model.to_gpu(0)
 
     prog_optimizer = optimizers.SGD()
     prog_optimizer.setup(prog_model)
