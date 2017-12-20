@@ -13,12 +13,24 @@ from model import Model
 import time
 import argparse
 
-def summary(rewards):
+
+def summary(rewards, loss):
+    plt.figure()
     plt.plot(rewards)
     plt.xlabel("Game")
     plt.ylabel("Reward")
     plt.title("Reward as a function of nr. of games")
-    plt.savefig("result/summary_{}.png".format(time.strftime("%d-%m-%Y %H:%M:%S")), format="png")
+    plt.savefig("result/summary_reward_{}.png".format(time.strftime("%d-%m-%Y %H:%M:%S")), format="png")
+
+    if not headless:
+        plt.show()
+
+    plt.figure()
+    plt.plot(loss)
+    plt.xlabel("Game")
+    plt.ylabel("Loss")
+    plt.title("Loss as a function of nr. of games")
+    plt.savefig("result/summary_loss_{}.png".format(time.strftime("%d-%m-%Y %H:%M:%S")), format="png")
 
     if not headless:
         plt.show()
@@ -28,56 +40,56 @@ def train():
     print("observation space:", env.observation_space)
     print("action space:", env.action_space)
 
-    i = 0
-    eta = 0.1
-
     rewards = []
+    loss = []
 
-    cumul_reward = 0
-    for i in tqdm(range(n_epoch)):
+    for _ in tqdm(range(n_epoch)):
         obs = np.array(env.reset())
+        cumul_reward = 0
+        cumul_loss = 0
         while True:
             if not headless:
                 env.render()
             # print('initial observation:', obs)
             
-            obs = obs.reshape((1,3,210,160))
+            obs = obs.reshape((1, 3, 210, 160))
             # obs = obs.reshape((1,3,200,200))
 
-            action, do_action = compute_action(obs)
+            q_values, do_action = compute_action(obs)
 
             obs, reward, done, info = env.step(do_action)
             obs = np.array(obs)
-            q_value = action
-            new_q = q_value.data
-            new_q[0][do_action] *= eta
-            new_q[0][do_action] += reward
+
+            new_q = np.array(q_values.data).copy()
+            new_q[do_action] *= eta
+            new_q[do_action] += reward
 
             # print(q_value)
             # print(new_q)
-            loss = F.mean_squared_error(q_value, new_q)
+            loss_prog = F.mean_squared_error(q_values, new_q)
 
-            prog_model.predictor.cleargrads()
-            loss.backward()
+            prog_net.cleargrads()
+            loss_prog.backward()
             prog_optimizer.update()
 
             cumul_reward += reward
+            cumul_loss += loss_prog.data
             if done:
-                tqdm.write(str(cumul_reward))
+                tqdm.write("Reward: {} \t Loss: {}".format(str(cumul_reward), str(cumul_loss)))
                 rewards.append(cumul_reward)
-                cumul_reward = 0
+                loss.append(cumul_loss)
                 break
 
         # print("next observation:,", obs)
         # print("reward:", r)
         # print("done:", done)
         # print("info:", info)
-    serializers.save_hdf5('my_model.model', prog_model)
-    summary(rewards)
+    serializers.save_hdf5(args.outfile, prog_net)
+    summary(rewards, loss)
 
 
 def compute_action(obs):
-    action = prog_model.predict(obs, 1)
+    action = prog_net.predict(obs, 1)
 
     if cuda.available:
         do_action = 1
@@ -121,6 +133,8 @@ if __name__ == "__main__":
                         help="Amount of feature maps")
     parser.add_argument("--epochs", dest="n_epoch", type=int, default=20,
                         help="Amount of epochs")
+    parser.add_argument("--eta", dest="eta", type=int, default=0.1,
+                        help="Learning Rate")
     parser.add_argument("--headless", type=str2bool, nargs='?', const=True, default=True,
                         help="Headless mode, supresses rendering and plotting")
     args = parser.parse_args()
@@ -137,21 +151,20 @@ if __name__ == "__main__":
 
     number_of_actions = env.action_space.n
     epsilon = 0.2
+    eta = args.eta
+
     n_epoch = args.n_epoch
     if args.model_path:
-        prog_model = run_saved(args.model_path)
+        prog_net = run_saved(args.model_path)
     else:
-        prog_model = Model(
-            networks.ProgNet(n_actions=number_of_actions, n_feature_maps=args.n_feature_maps,
-                             n_hidden_units=args.n_hidden)
-            , lossfun=F.sigmoid_cross_entropy, accfun=F.accuracy
-        )
+        prog_net = networks.ProgNet(n_actions=number_of_actions, n_feature_maps=args.n_feature_maps,
+                                    n_hidden_units=args.n_hidden)
 
     if cuda.available:
-        prog_model.to_gpu(0)
+        prog_net.to_gpu(0)
 
     prog_optimizer = optimizers.SGD()
-    prog_optimizer.setup(prog_model)
+    prog_optimizer.setup(prog_net)
 
     print("Model Set Up!")
 
