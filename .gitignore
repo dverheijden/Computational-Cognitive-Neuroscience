@@ -6,6 +6,7 @@
 **/*.pickle
 .vscode/
 **/*.mat
+**/*.model
 
 # .gitignore LaTeX
 **/*.aux

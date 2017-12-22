@@ -3,6 +3,7 @@ import chainer.cuda as cuda
 import chainer.optimizers as optimizers
 import matplotlib as mpl
 from chainer import serializers
+from chainer import Variable
 import numpy
 import numpy as np
 from tqdm import tqdm
@@ -15,8 +16,15 @@ import argparse
 
 
 def summary(rewards, loss):
+    avgs = [0]
+    for n in range(len(rewards)):
+        avg = (avgs[-1]*n + rewards[n]) / (n+1)
+        avgs.append(avg)
+
     plt.figure()
-    plt.plot(rewards)
+    plt.plot(rewards, label="score")
+    plt.plot(avgs[1:], label="avg")
+    plt.legend()
     plt.xlabel("Game")
     plt.ylabel("Reward")
     plt.title("Reward as a function of nr. of games")
@@ -36,6 +44,25 @@ def summary(rewards, loss):
         plt.show()
 
 
+def process_data(data, reward):
+    cumul_loss = 0
+    tqdm.write("This batch had {} samples with a reward of {}".format(len(data), reward))
+    for old_q, taken_action in data:
+        new_q = old_q.data.copy()
+
+        if reward == 0:
+            reward = -1
+        new_q[0][taken_action] += reward
+
+        loss_prog = F.mean_squared_error(old_q, Variable(new_q))
+
+        prog_net.cleargrads()
+        loss_prog.backward()
+        prog_optimizer.update()
+        cumul_loss += loss_prog.data
+    return cumul_loss
+
+
 def train():
     print("observation space:", env.observation_space)
     print("action space:", env.action_space)
@@ -47,34 +74,35 @@ def train():
         obs = np.array(env.reset())
         cumul_reward = 0
         cumul_loss = 0
+
+        batch = []
+        batch_reward = 0
         while True:
             if not headless:
                 env.render()
-            # print('initial observation:', obs)
-            
+
             obs = obs.reshape((1, 3, 210, 160))
             # obs = obs.reshape((1,3,200,200))
 
             q_values, do_action = compute_action(obs)
 
             obs, reward, done, info = env.step(do_action)
+
+            batch_reward += reward
+
+            # Potential convert to cupy array
             obs = np.array(obs)
 
-            new_q = np.array(q_values.data).copy()
-            new_q[do_action] *= eta
-            new_q[do_action] += reward
+            batch.append((q_values, do_action))
+            if len(batch) == args.batch_size:
+                cumul_loss += process_data(batch, batch_reward)
+                cumul_reward += batch_reward
+                batch = []
+                batch_reward = 0
 
-            # print(q_value)
-            # print(new_q)
-            loss_prog = F.mean_squared_error(q_values, new_q)
-
-            prog_net.cleargrads()
-            loss_prog.backward()
-            prog_optimizer.update()
-
-            cumul_reward += reward
-            cumul_loss += loss_prog.data
             if done:
+                cumul_loss += process_data(batch, batch_reward)
+                cumul_reward += batch_reward
                 tqdm.write("Reward: {} \t Loss: {}".format(str(cumul_reward), str(cumul_loss)))
                 rewards.append(cumul_reward)
                 loss.append(cumul_loss)
@@ -89,7 +117,7 @@ def train():
 
 
 def compute_action(obs):
-    action = prog_net.predict(obs, 1)
+    action = prog_net(obs, 1)
 
     if cuda.available:
         do_action = 1
@@ -97,10 +125,11 @@ def compute_action(obs):
         for index, Q in enumerate(action.data[0]):
             if Q > max_Q:
                 do_action = index
+                max_Q = Q
     else:
         do_action = np.argmax(action.data[0])
 
-    if epsilon > np.random.rand():
+    if np.random.rand() < epsilon:
         do_action = env.action_space.sample()
 
     return action, do_action
@@ -135,6 +164,10 @@ if __name__ == "__main__":
                         help="Amount of epochs")
     parser.add_argument("--eta", dest="eta", type=int, default=0.1,
                         help="Learning Rate")
+    parser.add_argument("--discount-factor", dest="discount_factor", type=int, default=0.999,
+                        help="Learning Rate")
+    parser.add_argument("--batch-size", dest="batch_size", type=int, default=100,
+                        help="Learning Rate")
     parser.add_argument("--headless", type=str2bool, nargs='?', const=True, default=True,
                         help="Headless mode, supresses rendering and plotting")
     args = parser.parse_args()
@@ -150,7 +183,7 @@ if __name__ == "__main__":
     # env = gym.make("SpaceInvaders-v4")
 
     number_of_actions = env.action_space.n
-    epsilon = 0.2
+    epsilon = 0.1
     eta = args.eta
 
     n_epoch = args.n_epoch
