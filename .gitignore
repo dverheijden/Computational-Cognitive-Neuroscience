@@ -7,6 +7,8 @@
 .vscode/
 **/*.mat
 **/*.model
+**/*.out
+**/*.progress
 
 # .gitignore LaTeX
 **/*.aux

@@ -32,11 +32,14 @@ class ProgNet(Chain):
         super(ProgNet, self).__init__()
         with self.init_scope():
             self.conv11 = L.Convolution2D(in_channels=3, out_channels=n_feature_maps, ksize=8, stride=4)
-            self.conv12 = L.Convolution2D(in_channels=n_feature_maps, out_channels=n_feature_maps//2, ksize=4, stride=2)
-            self.conv13 = L.Convolution2D(in_channels=n_feature_maps//2, out_channels=n_feature_maps//4, ksize=2, stride=1)
+            self.conv12 = L.Convolution2D(in_channels=n_feature_maps, out_channels=n_feature_maps, ksize=4, stride=2)
+            self.conv13 = L.Convolution2D(in_channels=n_feature_maps, out_channels=n_feature_maps, ksize=2, stride=1)
             self.fc11 = L.Linear(in_size=None, out_size=n_hidden_units)
             self.fc12 = L.Linear(in_size=None, out_size=n_actions)
-            self.bn11 = L.BatchNormalization(n_hidden_units)
+            self.bn11 = L.BatchNormalization(n_feature_maps)
+            self.bn12 = L.BatchNormalization(n_feature_maps)
+            self.bn13 = L.BatchNormalization(n_feature_maps)
+            self.bn14 = L.BatchNormalization(n_hidden_units)
 
         # self.conv21 = L.ConvolutionND(3, in_channels=None, out_channels=n_feature_maps, ksize=8, stride=4)
         # self.conv22 = L.ConvolutionND(3, in_channels=None, out_channels=n_feature_maps, ksize=4, stride=2)
@@ -54,10 +57,10 @@ class ProgNet(Chain):
         x = x.astype('f')
         if task == 1:
             # self.set_active_task(task)
-            self.output11 = F.relu(self.conv11(x))
-            self.output12 = F.relu(self.conv12(self.output11))
-            self.output13 = F.relu(self.conv13(self.output12))
-            self.output14 = F.relu(self.bn11(self.fc11(self.output13)))
+            self.output11 = self.bn11(F.relu(self.conv11(x)))
+            self.output12 = self.bn12(F.relu(self.conv12(self.output11)))
+            self.output13 = self.bn13(F.relu(self.conv13(self.output12)))
+            self.output14 = self.bn14(F.relu(self.fc11(self.output13)))
             self.output = self.fc12(self.output14)
 
         if task == 2:

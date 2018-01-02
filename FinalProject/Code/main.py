@@ -30,17 +30,17 @@ def summary(rewards, loss):
     plt.title("Reward as a function of nr. of games")
     plt.savefig("result/summary_reward_{}.png".format(time.strftime("%d-%m-%Y %H:%M:%S")), format="png")
 
-    if not headless:
+    if not args.headless:
         plt.show()
 
     plt.figure()
     plt.plot(loss)
-    plt.xlabel("Game")
+    plt.xlabel("Batch")
     plt.ylabel("Loss")
     plt.title("Loss as a function of nr. of games")
     plt.savefig("result/summary_loss_{}.png".format(time.strftime("%d-%m-%Y %H:%M:%S")), format="png")
 
-    if not headless:
+    if not args.headless:
         plt.show()
 
 
@@ -51,7 +51,7 @@ def process_data(data):
 
         _, _, max_next_Q = compute_action(next_state, deterministic=True)
 
-        new_q[0][taken_action] = reward + args.gamma * max_next_Q
+        new_q[0][taken_action] += args.alpha * (reward + args.gamma * max_next_Q)
 
         loss_prog = F.mean_squared_error(old_q, Variable(new_q))
 
@@ -60,13 +60,13 @@ def process_data(data):
         prog_optimizer.update()
         cumul_loss += loss_prog.data
 
-    tqdm.write("Trained on {} samples \t Loss: {}".format(len(data), cumul_loss/len(data)))
-    return cumul_loss / len(data)
+    # tqdm.write("Trained on {} samples \t Loss: {}".format(len(data), cumul_loss/len(data)))
+    return float(cumul_loss / len(data))
 
 
 def discount_reward(memory, cur_reward):
     discounted_reward = np.zeros(len(memory))
-    discounted_reward[-1] = cur_reward[-1]
+    discounted_reward[-1] = cur_reward
     for t in reversed(range(0, len(memory) - 1)):
         discounted_reward[t] = args.decay_rate * discounted_reward[t+1]
 
@@ -74,58 +74,85 @@ def discount_reward(memory, cur_reward):
 
 
 def preprocess_obs(obs):
+    """
+
+    :param obs: (210,160,3) field
+    :return:
+    """
     # TODO: Maybe trim the unessential parts out of the obs
     # TODO: Turn obs to grayscale?
     obs = np.array(obs)  # Convert to potential cupy array
-    obs = obs.reshape((1, 210, 160, 3))
-    # obs = obs[:, :, :, 0]  # Remove the non-red colors for dimensionality reduction?
+    if args.env == "Pong-v0":
+        obs = obs[35:195, :, :]  # Trim out score and bottom
+        obs = obs[::2, ::2, :]  # Downsample by a factor 2
+        obs = obs.reshape((1, 3, 80, 80))  # Chainer needs (n_samples, n_channels, length, width)
+    else:
+        obs = obs.reshape((1, 3, 210, 160))
 
     return obs
 
 
 def train():
-    tqdm.write("observation space:", env.observation_space)
-    tqdm.write("action space:", env.action_space)
+    print("observation space:", env.observation_space)
+    print("action space:", env.action_space)
 
     rewards = []
     loss = []
+    tqdm.write(" {:^5} | {:^5} | {:^10} | {:^10} | {:^12} | {:^10} \n".format(
+        "Game", "Score", "Total Avg", "Batch Avg", "Total Moves", "Loss")
+               + "-"*73)
+    with open("{}.progress".format(args.env), 'w') as f:
+        for game_nr in tqdm(range(1, args.n_epoch+1), unit="game", ascii=True, file=f):
+            prev_obs = None
+            cur_obs = preprocess_obs(env.reset())
 
-    for game_nr in tqdm(range(n_epoch)):
-        prev_obs = None
-        cur_obs = env.reset()
+            batch = []
+            memory = []
+            running_reward = 0
 
-        batch = []
-        memory = []
-        running_reward = 0
+            moves = 0
 
-        while True:
-            if not headless:
-                env.render()
+            while True:
+                moves += 1
 
-            cur_obs = preprocess_obs(cur_obs)
-            obs = cur_obs - prev_obs if prev_obs is not None else np.zeros(cur_obs.shape)
-            prev_obs = cur_obs
+                if not args.headless:
+                    env.render()
 
-            q_values, do_action, _ = compute_action(obs, deterministic=False)
+                obs = cur_obs - prev_obs if prev_obs is not None else np.zeros(cur_obs.shape)
+                prev_obs = cur_obs
 
-            cur_obs, reward, done, info = env.step(do_action)
+                q_values, taken_action, _ = compute_action(obs, deterministic=False)
 
-            if reward == 0:  # No reward in previous state
-                memory.append([prev_obs, cur_obs, q_values, do_action])
-            else:
-                processed_memory = np.hstack((memory, discount_reward(memory, reward)))
-                memory.clear()
-                np.vstack((batch, processed_memory))  # append to training data
+                cur_obs, reward, done, info = env.step(taken_action)
+                cur_obs = preprocess_obs(cur_obs)
+                running_reward += reward
 
-            running_reward += reward
+                memory.append([prev_obs, cur_obs, q_values, taken_action])
 
-            if done:
-                tqdm.write("Game {}: {}".format(str(game_nr), str(running_reward)))
-                rewards.append(running_reward)
-                if game_nr % args.update_threshold == 0:
-                    loss.append(process_data(batch))
-                    batch.clear()
-                break
+                if reward != 0 or done:
+                    # Distribute discounted reward to previous actions
+                    discounted_reward = discount_reward(memory, reward)
+                    for i in range(len(memory)):
+                        memory[i].extend([discounted_reward[i]])
+                    batch.extend(memory)  # append to training data
+                    memory.clear()
+
+                if done:
+                    rewards.append(running_reward)
+                    batch_loss = "N/A"
+                    if game_nr % args.update_threshold == 0:
+                        batch_loss = process_data(batch)
+                        loss.append(batch_loss)
+                        batch_loss = "{:.10f}".format(batch_loss)
+                        batch.clear()
+
+                    tqdm.write(" {:5d} | {:+5.0f} | {:10.5f} | {:10.5f} | {:12d} | {:^10} ".format(
+                        game_nr, running_reward, sum(rewards)/len(rewards),
+                        sum(rewards[-args.update_threshold:])/len(rewards[-args.update_threshold:]),
+                        moves, batch_loss
+                        )
+                    )
+                    break
 
     serializers.save_hdf5(args.outfile, prog_net)
     summary(rewards, loss)
@@ -140,20 +167,20 @@ def compute_action(obs, deterministic):
     """
     q_values = prog_net(obs, 1)
 
-    if np.random.rand() < epsilon and not deterministic:
-        do_action = env.action_space.sample()
+    if np.random.rand() < args.epsilon and not deterministic:
+        taken_action = env.action_space.sample()
     else:
         if cuda.available:
-            do_action = 1
+            taken_action = 1
             max_Q = -99999999
             for index, Q in enumerate(q_values.data[0]):
                 if Q > max_Q:
-                    do_action = index
+                    taken_action = index
                     max_Q = Q
         else:
-            do_action = np.argmax(q_values.data[0])
+            taken_action = np.argmax(q_values.data[0])
 
-    return q_values, do_action, q_values.data[0][do_action]
+    return q_values, taken_action, q_values.data[0][taken_action]
 
 
 def run_saved(filename):
@@ -181,20 +208,22 @@ if __name__ == "__main__":
                         help="Amount of hidden units")
     parser.add_argument("--feature-maps", dest="n_feature_maps", type=int, default=12,
                         help="Amount of feature maps")
-    parser.add_argument("--epochs", dest="n_epoch", type=int, default=20,
+    parser.add_argument("--epochs", dest="n_epoch", type=int, default=100,
                         help="Amount of epochs")
-    parser.add_argument("--eta", dest="eta", type=int, default=0.001,
+    parser.add_argument("--alpha", dest="alpha", type=float, default=1e-2,
                         help="Learning Rate")
-    parser.add_argument("--gamma", dest="gamma", type=int, default=0.99,
+    parser.add_argument("--epsilon", dest="epsilon", type=float, default=0.2,
+                        help="Chance of doing a random action")
+    parser.add_argument("--gamma", dest="gamma", type=float, default=0.99,
                         help="Discount factor")
-    parser.add_argument("--decay-rate", dest="decay_rate", type=int, default=0.99,
+    parser.add_argument("--decay-rate", dest="decay_rate", type=float, default=0.99,
                         help="Decay rate for future rewards")
-    parser.add_argument("--update-after", dest="update_threshold", type=int, default=100,
+    parser.add_argument("--update-after", dest="update_threshold", type=int, default=10,
                         help="Number of games needed to update")
-    parser.add_argument("--headless", type=str2bool, nargs='?', const=True, default=True,
+    parser.add_argument("--headless", type=str2bool, nargs='?', const=True, default=False,
                         help="Headless mode, suppresses rendering and plotting")
     args = parser.parse_args()
-
+    print(args)
     if cuda.available:  # GPU optimization
         import cupy as np
         np.cuda.Device(0).use()
@@ -202,14 +231,10 @@ if __name__ == "__main__":
 
     import matplotlib.pyplot as plt
     env = gym.make(args.env)
-    headless = args.headless
     # env = gym.make("SpaceInvaders-v4")
 
     number_of_actions = env.action_space.n
-    epsilon = 0.1
-    eta = args.eta
 
-    n_epoch = args.n_epoch
     if args.model_path:
         prog_net = run_saved(args.model_path)
     else:
@@ -219,7 +244,7 @@ if __name__ == "__main__":
     if cuda.available:
         prog_net.to_gpu(0)
 
-    prog_optimizer = optimizers.SGD()
+    prog_optimizer = optimizers.SGD(lr=args.alpha)
     prog_optimizer.setup(prog_net)
 
     print("Model Set Up!")
