@@ -44,15 +44,14 @@ def summary(rewards, loss):
         plt.show()
 
 
-def process_data(data, reward):
+def process_data(data):
     cumul_loss = 0
-    tqdm.write("This batch had {} samples with a reward of {}".format(len(data), reward))
-    for old_q, taken_action in data:
+    for cur_state, next_state, old_q, taken_action, reward in data:
         new_q = old_q.data.copy()
 
-        if reward == 0:
-            reward = -1
-        new_q[0][taken_action] += reward
+        _, _, max_next_Q = compute_action(next_state, deterministic=True)
+
+        new_q[0][taken_action] = reward + args.gamma * max_next_Q
 
         loss_prog = F.mean_squared_error(old_q, Variable(new_q))
 
@@ -60,15 +59,26 @@ def process_data(data, reward):
         loss_prog.backward()
         prog_optimizer.update()
         cumul_loss += loss_prog.data
-    return cumul_loss
+
+    tqdm.write("Trained on {} samples \t Loss: {}".format(len(data), cumul_loss/len(data)))
+    return cumul_loss / len(data)
+
+
+def discount_reward(memory, cur_reward):
+    discounted_reward = np.zeros(len(memory))
+    discounted_reward[-1] = cur_reward[-1]
+    for t in reversed(range(0, len(memory) - 1)):
+        discounted_reward[t] = args.decay_rate * discounted_reward[t+1]
+
+    return discounted_reward
 
 
 def preprocess_obs(obs):
     # TODO: Maybe trim the unessential parts out of the obs
     # TODO: Turn obs to grayscale?
     obs = np.array(obs)  # Convert to potential cupy array
-    obs = obs.reshape((1, 3, 210, 160))
-    # obs = obs.reshape((1,3,200,200))
+    obs = obs.reshape((1, 210, 160, 3))
+    # obs = obs[:, :, :, 0]  # Remove the non-red colors for dimensionality reduction?
 
     return obs
 
@@ -80,13 +90,11 @@ def train():
     rewards = []
     loss = []
 
-    for _ in tqdm(range(n_epoch)):
-        cumul_reward = 0
-        cumul_loss = 0
-
+    for game_nr in tqdm(range(n_epoch)):
         prev_obs = None
         cur_obs = env.reset()
 
+        batch = []
         memory = []
         running_reward = 0
 
@@ -98,52 +106,54 @@ def train():
             obs = cur_obs - prev_obs if prev_obs is not None else np.zeros(cur_obs.shape)
             prev_obs = cur_obs
 
-            q_values, do_action = compute_action(obs)
+            q_values, do_action, _ = compute_action(obs, deterministic=False)
 
             cur_obs, reward, done, info = env.step(do_action)
 
+            if reward == 0:  # No reward in previous state
+                memory.append([prev_obs, cur_obs, q_values, do_action])
+            else:
+                processed_memory = np.hstack((memory, discount_reward(memory, reward)))
+                memory.clear()
+                np.vstack((batch, processed_memory))  # append to training data
+
             running_reward += reward
 
-            batch.append((q_values, do_action))
-            if len(batch) == args.batch_size:
-                cumul_loss += process_data(batch, running_reward)
-                cumul_reward += running_reward
-                batch = []
-                running_reward = 0
-
             if done:
-                cumul_loss += process_data(batch, running_reward)
-                cumul_reward += running_reward
-                tqdm.write("Reward: {} \t Loss: {}".format(str(cumul_reward), str(cumul_loss)))
-                rewards.append(cumul_reward)
-                loss.append(cumul_loss)
+                tqdm.write("Game {}: {}".format(str(game_nr), str(running_reward)))
+                rewards.append(running_reward)
+                if game_nr % args.update_threshold == 0:
+                    loss.append(process_data(batch))
+                    batch.clear()
                 break
 
-        # print("next observation:,", obs)
-        # print("reward:", r)
-        # print("done:", done)
-        # print("info:", info)
     serializers.save_hdf5(args.outfile, prog_net)
     summary(rewards, loss)
 
 
-def compute_action(obs):
-    action = prog_net(obs, 1)
+def compute_action(obs, deterministic):
+    """
+    Computes the next action in an e-greedy fashion
+    :param obs:
+    :param deterministic:
+    :return: 
+    """
+    q_values = prog_net(obs, 1)
 
-    if np.random.rand() < epsilon:
+    if np.random.rand() < epsilon and not deterministic:
         do_action = env.action_space.sample()
     else:
         if cuda.available:
             do_action = 1
             max_Q = -99999999
-            for index, Q in enumerate(action.data[0]):
+            for index, Q in enumerate(q_values.data[0]):
                 if Q > max_Q:
                     do_action = index
                     max_Q = Q
         else:
-            do_action = np.argmax(action.data[0])
+            do_action = np.argmax(q_values.data[0])
 
-    return action, do_action
+    return q_values, do_action, q_values.data[0][do_action]
 
 
 def run_saved(filename):
@@ -175,9 +185,11 @@ if __name__ == "__main__":
                         help="Amount of epochs")
     parser.add_argument("--eta", dest="eta", type=int, default=0.001,
                         help="Learning Rate")
-    parser.add_argument("--discount-factor", dest="discount_factor", type=int, default=0.999,
-                        help="Learning Rate")
-    parser.add_argument("--batch-size", dest="batch_size", type=int, default=100,
+    parser.add_argument("--gamma", dest="gamma", type=int, default=0.99,
+                        help="Discount factor")
+    parser.add_argument("--decay-rate", dest="decay_rate", type=int, default=0.99,
+                        help="Decay rate for future rewards")
+    parser.add_argument("--update-after", dest="update_threshold", type=int, default=100,
                         help="Number of games needed to update")
     parser.add_argument("--headless", type=str2bool, nargs='?', const=True, default=True,
                         help="Headless mode, suppresses rendering and plotting")
