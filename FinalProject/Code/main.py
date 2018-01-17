@@ -13,6 +13,8 @@ import networks
 from model import Model
 import time
 import argparse
+from random import shuffle
+from decimal import Decimal
 
 
 def summary(rewards, loss):
@@ -45,23 +47,28 @@ def summary(rewards, loss):
 
 
 def process_data(data):
-    cumul_loss = 0
+    new_data = []
     for cur_state, next_state, old_q, taken_action, reward in data:
         new_q = old_q.data.copy()
 
         _, _, max_next_Q = compute_action(next_state, deterministic=True)
 
         new_q[0][taken_action] += args.alpha * (reward + args.gamma * max_next_Q)
+        new_q = Variable(new_q)
+        new_data.append([old_q, new_q])
 
-        loss_prog = F.mean_squared_error(old_q, Variable(new_q))
+    shuffle(new_data)
 
+    cumul_loss = 0
+    for old_q, new_q in new_data:
+        loss_prog = F.mean_squared_error(old_q, new_q)
         prog_net.cleargrads()
         loss_prog.backward()
         prog_optimizer.update()
         cumul_loss += loss_prog.data
 
-    # tqdm.write("Trained on {} samples \t Loss: {}".format(len(data), cumul_loss/len(data)))
-    return float(cumul_loss / len(data))
+    # tqdm.write("Trained on {} samples \t Loss: {}".format(len(data), cumul_loss))
+    return float(cumul_loss / len(data)), float(cumul_loss)
 
 
 def discount_reward(memory, cur_reward):
@@ -98,9 +105,9 @@ def train():
 
     rewards = []
     loss = []
-    tqdm.write(" {:^5} | {:^5} | {:^10} | {:^10} | {:^12} | {:^10} \n".format(
-        "Game", "Score", "Total Avg", "Batch Avg", "Total Moves", "Loss")
-               + "-"*73)
+    tqdm.write(" {:^5} | {:^5} | {:^10} | {:^10} | {:^12} | {:^10} | {:^15}\n".format(
+        "Game", "Score", "Total Avg", "Batch Avg", "Total Moves", "Avg Loss", "Total Loss")
+               + "-"*88)
     with open("{}.progress".format(args.env), 'w') as f:
         for game_nr in tqdm(range(1, args.n_epoch+1), unit="game", ascii=True, file=f):
             prev_obs = None
@@ -140,16 +147,18 @@ def train():
                 if done:
                     rewards.append(running_reward)
                     batch_loss = "N/A"
+                    avg_loss = "N/A"
                     if game_nr % args.update_threshold == 0:
-                        batch_loss = process_data(batch)
-                        loss.append(batch_loss)
-                        batch_loss = "{:.10f}".format(batch_loss)
+                        avg_loss, batch_loss = process_data(batch)
+                        loss.append(avg_loss)
+                        avg_loss = "{:.2E}".format(Decimal(avg_loss))
+                        batch_loss = "{:.2E}".format(Decimal(batch_loss))
                         batch.clear()
 
-                    tqdm.write(" {:5d} | {:+5.0f} | {:10.5f} | {:10.5f} | {:12d} | {:^10} ".format(
+                    tqdm.write(" {:5d} | {:+5.0f} | {:10.5f} | {:10.5f} | {:12d} | {:^10} | {:^15}".format(
                         game_nr, running_reward, sum(rewards)/len(rewards),
                         sum(rewards[-args.update_threshold:])/len(rewards[-args.update_threshold:]),
-                        moves, batch_loss
+                        moves, avg_loss, batch_loss
                         )
                     )
                     break
@@ -210,7 +219,7 @@ if __name__ == "__main__":
                         help="Amount of feature maps")
     parser.add_argument("--epochs", dest="n_epoch", type=int, default=100,
                         help="Amount of epochs")
-    parser.add_argument("--alpha", dest="alpha", type=float, default=1e-2,
+    parser.add_argument("--alpha", dest="alpha", type=float, default=1e-4,
                         help="Learning Rate")
     parser.add_argument("--epsilon", dest="epsilon", type=float, default=0.2,
                         help="Chance of doing a random action")
@@ -231,7 +240,6 @@ if __name__ == "__main__":
 
     import matplotlib.pyplot as plt
     env = gym.make(args.env)
-    # env = gym.make("SpaceInvaders-v4")
 
     number_of_actions = env.action_space.n
 
@@ -244,7 +252,7 @@ if __name__ == "__main__":
     if cuda.available:
         prog_net.to_gpu(0)
 
-    prog_optimizer = optimizers.SGD(lr=args.alpha)
+    prog_optimizer = optimizers.Adam(alpha=args.alpha)
     prog_optimizer.setup(prog_net)
 
     print("Model Set Up!")
