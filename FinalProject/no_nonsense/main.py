@@ -103,8 +103,10 @@ def compute_action(obs, deterministic):
     :param deterministic:
     :return:
     """
+    obs = chainer.cuda.to_gpu(obs) if chainer.cuda.available else obs
     q_values = net(obs)
 
+    global eps_threshold
     eps_threshold = epsilon_min + (epsilon_max - epsilon_min) * math.exp(-1 * total_moves / epsilon_decay)
 
     if np.random.rand() < eps_threshold and not deterministic:
@@ -123,8 +125,8 @@ def train():
 
     rewards = []
     losses = []
-    tqdm.write(" {:^5} | {:^5} | {:^10} | {:^10} | {:^12} | {:^10} | {:^15}\n".format(
-        "Game", "Score", "Total Avg", "Score@10", "Total Moves", "Avg Loss", "Total Loss")
+    tqdm.write(" {:^5} | | {:^10} | {:^5} | {:^10} | {:^10} | {:^12} | {:^10} | {:^15}\n".format(
+        "Game", "Epsilon", "Score", "Total Avg", "Score@10", "Total Moves", "Avg Loss", "Total Loss")
                + "-"*88)
 
     for game_nr in tqdm(range(1, args.n_epoch+1), unit="game", ascii=False):
@@ -200,8 +202,8 @@ def train():
                 losses.append(avg_loss)
                 avg_loss = "{:.2E}".format(Decimal(avg_loss))
                 batch_loss = "{:.2E}".format(Decimal(batch_loss))
-                tqdm.write(" {:5d} | {:+5.0f} | {:10.5f} | {:10.5f} | {:12d} | {:^10} | {:^15}".format(
-                    game_nr, running_reward, sum(rewards)/len(rewards),
+                tqdm.write(" {:5d} | {:10.8f} | {:+5.0f} | {:10.5f} | {:10.5f} | {:12d} | {:^10} | {:^15}".format(
+                    game_nr, eps_threshold, running_reward, sum(rewards)/len(rewards),
                     sum(rewards[-10:])/len(rewards[-10:]),
                     moves, avg_loss, batch_loss
                     )
@@ -258,9 +260,12 @@ if __name__ == "__main__":
     epsilon_max = 0.9
     epsilon_min = args.epsilon
     epsilon_decay = 100000
+    eps_threshold = 1
     total_moves = 0
 
     net = FCN(n_actions=env.action_space.n)
+    if chainer.cuda.available:
+        net.to_gpu()
     optim = optimizers.RMSprop(lr=args.alpha)
     optim.setup(net)
 
