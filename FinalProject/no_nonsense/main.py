@@ -47,16 +47,19 @@ def summary(rewards, loss):
 
 def process_data(data):
     cumul_loss = 0
-    for cur_state, next_state, old_q, taken_action, reward, terminal in data:
+    for cur_state, next_state, old_q, taken_action, terminal, reward in data:
 
         with chainer.no_backprop_mode():
-            new_q = old_q.data.copy()
+            new_q = old_q.data[0].copy()
+            new_q = chainer.cuda.to_cpu(new_q) if chainer.cuda.available else new_q
 
             _, _, max_next_Q = compute_action(next_state, deterministic=True)
 
-            new_q[0][taken_action] = reward + args.gamma * max_next_Q if not terminal else reward
+            new_q[taken_action] = reward + args.gamma * max_next_Q.data if not terminal else reward
+            new_q = np.expand_dims(new_q, axis=0)
 
-        loss = F.huber_loss(old_q, new_q, 1)
+        new_q = chainer.cuda.to_gpu(new_q) if chainer.cuda.available else new_q
+        loss = F.huber_loss(old_q, Variable(new_q), 1)
         net.cleargrads()
         loss.backward()
         optim.update()
@@ -84,16 +87,13 @@ def preprocess_obs(obs):
     return obs
 
 
-def discount_rewards(r):
-    """ take 1D float array of rewards and compute discounted reward """
-    discounted_r = np.zeros_like(r)
-    running_add = 0
-    for t in reversed(range(0, r.size)):
-        if r[t] != 0:
-            running_add = 0  # reset the sum, since this was a game boundary (pong specific!)
-        running_add = running_add * args.dacay_rate + r[t]
-        discounted_r[t] = running_add
-    return discounted_r
+def discount_reward(memory, cur_reward):
+    discounted_reward = np.zeros(len(memory))
+    discounted_reward[-1] = cur_reward
+    for t in reversed(range(0, len(memory) - 1)):
+        discounted_reward[t] = args.decay_rate * discounted_reward[t+1]
+
+    return discounted_reward
 
 
 def compute_action(obs, deterministic):
@@ -103,7 +103,7 @@ def compute_action(obs, deterministic):
     :param deterministic:
     :return:
     """
-    obs = chainer.cuda.to_gpu(obs) if chainer.cuda.available else obs
+    obs = chainer.cuda.to_gpu(obs) if chainer.cuda.available else obs  # Copy to GPU
     q_values = net(obs)
 
     global eps_threshold
@@ -112,9 +112,11 @@ def compute_action(obs, deterministic):
     if np.random.rand() < eps_threshold and not deterministic:
         best_action = env.action_space.sample()
     else:
-        best_action = np.argmax(q_values.data[0])
+        best_action = F.argmax(q_values)
+        best_action = best_action.data
+        best_action = chainer.cuda.to_cpu(best_action) if chainer.cuda.available else best_action
 
-    return q_values, best_action, q_values.data[0][best_action]
+    return q_values, best_action, F.max(q_values)
 
 
 def train():
@@ -125,90 +127,97 @@ def train():
 
     rewards = []
     losses = []
-    tqdm.write(" {:^5} | | {:^10} | {:^5} | {:^10} | {:^10} | {:^12} | {:^10} | {:^15}\n".format(
+    tqdm.write(" {:^5} | {:^10} | {:^5} | {:^10} | {:^10} | {:^12} | {:^10} | {:^15}\n".format(
         "Game", "Epsilon", "Score", "Total Avg", "Score@10", "Total Moves", "Avg Loss", "Total Loss")
-               + "-"*88)
+               + "-"*100)
+    with open("{}.progress".format(args.env), 'w') as f:
+        for game_nr in tqdm(range(1, args.n_epoch+1), unit="game", ascii=True, file=f):
+            prev_obs = None
+            cur_obs = preprocess_obs(env.reset())
 
-    for game_nr in tqdm(range(1, args.n_epoch+1), unit="game", ascii=False):
-        prev_obs = None
-        cur_obs = preprocess_obs(env.reset())
+            temp_memory = []
+            replay_memory = []
 
-        memory = []
+            running_reward = 0
 
-        running_reward = 0
+            moves = 0
 
-        moves = 0
+            loss_list = []
 
-        loss_list = []
+            while True:
+                moves += 1  # Bookkeeping
+                total_moves += 1  # epsilon_decay
 
-        while True:
-            moves += 1  # Bookkeeping
-            total_moves += 1  # epsilon_decay
+                if not args.headless:
+                    env.render()
 
-            if not args.headless:
-                env.render()
+                state = np.subtract(cur_obs, prev_obs) if prev_obs is not None else np.zeros(cur_obs.shape, dtype=np.float32)
+                prev_obs = cur_obs
 
-            obs = np.subtract(cur_obs, prev_obs) if prev_obs is not None else np.zeros(cur_obs.shape, dtype=np.float32)
-            prev_obs = cur_obs
+                q_values, taken_action, _ = compute_action(state, deterministic=False)
 
-            q_values, taken_action, _ = compute_action(obs, deterministic=False)
+                cur_obs, reward, done, info = env.step(taken_action)
+                cur_obs = preprocess_obs(cur_obs)
 
-            cur_obs, reward, done, info = env.step(taken_action)
-            cur_obs = preprocess_obs(cur_obs)
-            running_reward += reward
+                state_future = np.subtract(cur_obs, prev_obs)
 
-            # Old Approach...
-            # memory.append([prev_obs, cur_obs, q_values, taken_action])
-            #
-            # if reward != 0 or done:
-            #     # Distribute discounted reward to previous actions
-            #     discounted_reward = discount_reward(memory, reward)
-            #     for i in range(len(memory)):
-            #         memory[i].extend([discounted_reward[i]])
-            #     batch.extend(memory)  # append to training data
-            #     memory.clear()
+                running_reward += reward
 
-            # Simple DQN approach
-            if len(memory) is args.replay_size:
-                memory[randint(0, len(memory)-1)] = [prev_obs, cur_obs, q_values, taken_action, reward, done]
-            else:
-                memory.append([prev_obs, cur_obs, q_values, taken_action, reward, done])
+                # Old Approach...
+                temp_memory.append([state, state_future, q_values, taken_action, done])
 
-            # Update after every args.update_threshold frames
-            if moves % args.update_threshold is 0 and len(memory) > args.batch_size:
-                train_data = [memory[randint(0, len(memory) - 1)] for _ in range(args.batch_size)]
-                avg_loss, _ = process_data(train_data)
-                loss_list.append(avg_loss)
+                if reward != 0 or done:
+                    # Distribute discounted reward to previous actions
+                    discounted_reward = discount_reward(temp_memory, reward)
+                    for i in range(len(temp_memory)):
+                        temp_memory[i].extend([discounted_reward[i]])
+                    replay_memory.extend(temp_memory)  # append to training data
+                    temp_memory.clear()
+                    while len(replay_memory) > args.replay_size:
+                        del replay_memory[np.random.randint(0, len(replay_memory))]
 
-            if done:
-                rewards.append(running_reward)
-                # Old Approach
-                # batch_loss = "N/A"
-                # avg_loss = "N/A"
-                # if game_nr % args.update_threshold == 0:
-                #     avg_loss, batch_loss = process_data(batch)
-                #     loss.append(avg_loss)
-                #     avg_loss = "{:.2E}".format(Decimal(avg_loss))
-                #     batch_loss = "{:.2E}".format(Decimal(batch_loss))
-                #     batch.clear()
+                # # Simple DQN approach
+                # if len(memory) is args.replay_size:
+                #     memory[randint(0, len(memory)-1)] = [prev_obs, cur_obs, q_values, taken_action, reward, done]
+                # else:
+                #     memory.append([prev_obs, cur_obs, q_values, taken_action, reward, done])
 
-                # Update after X frames
-                batch_loss = sum([avg * args.batch_size for avg in loss_list])
-                avg_loss = sum(loss_list) / len(loss_list)
-                loss_list.clear()
+                # Update after every args.update_threshold frames
+                if moves % args.update_threshold is 0 and len(replay_memory) > args.batch_size:
+                    train_data = [replay_memory[randint(0, len(replay_memory) - 1)] for _ in range(args.batch_size)]
+                    avg_loss, _ = process_data(train_data)
+                    loss_list.append(avg_loss)
+                    losses.append(avg_loss)
 
-                # train_data = [batch[randint(0, len(batch) - 1)] for _ in range(args.batch_size)]
-                # avg_loss, batch_loss = process_data(train_data)
-                losses.append(avg_loss)
-                avg_loss = "{:.2E}".format(Decimal(avg_loss))
-                batch_loss = "{:.2E}".format(Decimal(batch_loss))
-                tqdm.write(" {:5d} | {:10.8f} | {:+5.0f} | {:10.5f} | {:10.5f} | {:12d} | {:^10} | {:^15}".format(
-                    game_nr, eps_threshold, running_reward, sum(rewards)/len(rewards),
-                    sum(rewards[-10:])/len(rewards[-10:]),
-                    moves, avg_loss, batch_loss
+                if done:
+                    rewards.append(running_reward)
+                    # # Old Approach
+                    # batch_loss = "N/A"
+                    # avg_loss = "N/A"
+                    # if game_nr % args.update_threshold == 0:
+                    #     shuffle(replay_memory)
+                    #     avg_loss, batch_loss = process_data(replay_memory)
+                    #     losses.append(avg_loss)
+                    #     avg_loss = "{:.2E}".format(Decimal(avg_loss))
+                    #     batch_loss = "{:.2E}".format(Decimal(batch_loss))
+
+                    # Update after X frames
+                    batch_loss = sum([avg * args.batch_size for avg in loss_list])
+                    avg_loss = sum(loss_list) / len(loss_list)
+                    loss_list.clear()
+
+                    # train_data = [batch[randint(0, len(batch) - 1)] for _ in range(args.batch_size)]
+                    # avg_loss, batch_loss = process_data(train_data)
+                    # losses.append(avg_loss)
+                    avg_loss = "{:.2E}".format(Decimal(avg_loss))
+                    batch_loss = "{:.2E}".format(Decimal(batch_loss))
+                    tqdm.write(" {:5d} | {:10.8f} | {:+5.0f} | {:10.5f} | {:10.5f} | {:12d} | {:^10} | {:^15}".format(
+                        game_nr, eps_threshold, running_reward, sum(rewards)/len(rewards),
+                        sum(rewards[-10:])/len(rewards[-10:]),
+                        moves, avg_loss, batch_loss
+                        )
                     )
-                )
-                break
+                    break
 
     summary(rewards, losses)
     serializers.save_hdf5(args.outfile if args.outfile else args.env, net)
@@ -231,17 +240,17 @@ if __name__ == "__main__":
                         help="Path to output model")
     parser.add_argument("--env", dest="env",
                         help="Environment Name", default="Pong-v0")
-    parser.add_argument("--hidden", dest="n_hidden", type=int, default=256,
+    parser.add_argument("--hidden", dest="n_hidden", type=int, default=512,
                         help="Amount of hidden units")
     parser.add_argument("--feature-maps", dest="n_feature_maps", type=int, default=12,
                         help="Amount of feature maps")
     parser.add_argument("--epochs", dest="n_epoch", type=int, default=20000,
                         help="Amount of epochs")
-    parser.add_argument("--replay-size", dest="replay_size", type=int, default=100000,
+    parser.add_argument("--replay-size", dest="replay_size", type=int, default=1000000,
                         help="Size of replay buffer")
     parser.add_argument("--batch-size", dest="batch_size", type=int, default=128,
-                        help="Size of replay buffer")
-    parser.add_argument("--alpha", dest="alpha", type=float, default=1e-4,
+                        help="Size of Batch Size")
+    parser.add_argument("--alpha", dest="alpha", type=float, default=1e-5,
                         help="Learning Rate")
     parser.add_argument("--epsilon", dest="epsilon", type=float, default=0.05,
                         help="Chance of doing a random action")
@@ -249,18 +258,20 @@ if __name__ == "__main__":
                         help="Discount factor")
     parser.add_argument("--decay-rate", dest="decay_rate", type=float, default=0.99,
                         help="Decay rate for future rewards")
-    parser.add_argument("--update-after", dest="update_threshold", type=int, default=10,
+    parser.add_argument("--update-after", dest="update_threshold", type=int, default=100,
                         help="Number of frames needed to update")
     parser.add_argument("--headless", type=str2bool, nargs='?', const=True, default=False,
                         help="Headless mode, suppresses rendering and plotting")
     args = parser.parse_args()
+    print(args)
 
     env = gym.make("Pong-v0")
 
     epsilon_max = 0.9
     epsilon_min = args.epsilon
-    epsilon_decay = 100000
+    epsilon_decay = 50000
     eps_threshold = 1
+
     total_moves = 0
 
     net = FCN(n_actions=env.action_space.n)
