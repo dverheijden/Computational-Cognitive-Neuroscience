@@ -6,6 +6,7 @@ from chainer import serializers
 from chainer import Variable
 import chainer
 import numpy as np
+from gym.envs import frameskip
 from tqdm import tqdm
 import gym
 from networks import FCN, CNN
@@ -14,6 +15,7 @@ import argparse
 from random import shuffle, randint
 from decimal import Decimal
 import math
+from copy import deepcopy
 
 
 def summary(rewards, loss):
@@ -54,57 +56,95 @@ def process_data(data):
     """
     cumul_loss = 0
     backprop_temp = []
-    print(data[1][0])
-    print(np.array(data[1]).shape)
-    max_next_qs = net(np.array(data[1]))
-    print(max_next_qs)
 
-    for cur_state, next_state, old_q, taken_action, terminal, reward in data:
+    data = np.array(data)
+    cur_states = np.stack(data[:, 0], axis=1)
+    cur_states = np.squeeze(cur_states, axis=0)
+    cur_qs = net(cur_states)
 
-        with chainer.no_backprop_mode():
-            new_q = old_q.data[0].copy()
-            new_q = chainer.cuda.to_cpu(new_q) if chainer.cuda.available else new_q
+    next_states = np.stack(data[:, 1], axis=1)
+    next_states = np.squeeze(next_states, axis=0)
+    next_qs = net(next_states)
 
-            _, _, max_next_Q = compute_action(next_state, deterministic=True)
+    with chainer.no_backprop_mode():  # Don't think this actually does anything, but better safe than sorry
+        target_qs = deepcopy(cur_qs.data)
+        # Memory Efficiency
+        # taken_action = data[:, 2]
+        # terminal = data[:, 3]
+        # rewards = data[:, 4]
+        for i in range(len(target_qs)):
+            # Q(s, a) = r + gamma * max_a(Q(s',a')) if game not over else r
+            target_qs[i, data[i, 2]] = data[i, 4] + args.gamma * next_qs.data[i, :].max() if not data[i, 3] else data[i, 2]
 
-            new_q[taken_action] = reward + args.gamma * max_next_Q.data if not terminal else reward
-            new_q = np.expand_dims(new_q, axis=0)
-            backprop_temp.append([old_q, new_q])
+    # loss = F.huber_loss(cur_qs, Variable(target_qs), 1)
+    loss = F.mean_squared_error(cur_qs, target_qs)
+    net.cleargrads()
+    loss.backward()
+    optim.update()
 
-    for old_q, new_q in backprop_temp:
-        new_q = chainer.cuda.to_gpu(new_q) if chainer.cuda.available else new_q
-        loss = F.huber_loss(old_q, Variable(new_q), 1)
-        print(loss.data)
-        net.cleargrads()
-        loss.backward()
-        optim.update()
-        cumul_loss += loss.data
+    return loss.data
+    #
+    # for cur_state, next_state, taken_action, terminal, reward in data:
+    #     cur_states = np.concatenate([cur_states, cur_state])
+    #     next_states = np.concatenate([next_states, next_state])
+    #
+    # for cur_state, next_state, taken_action, terminal, reward in data:
+    #     old_q = net(cur_state)
+    #     with chainer.no_backprop_mode():
+    #         new_q = deepcopy(old_q.data[0])
+    #         new_q = chainer.cuda.to_cpu(new_q) if chainer.cuda.available else new_q
+    #
+    #         _, _, max_next_Q = compute_action(next_state, deterministic=True)
+    #
+    #         new_q[taken_action] = reward + args.gamma * max_next_Q.data if not terminal else reward
+    #         new_q = np.expand_dims(new_q, axis=0)
+    #         backprop_temp.append([old_q, new_q])
+    #
+    # for old_q, new_q in backprop_temp:
+    #     new_q = chainer.cuda.to_gpu(new_q) if chainer.cuda.available else new_q
+    #     loss = F.huber_loss(old_q, Variable(new_q), 1)
+    #
+    #     net.cleargrads()
+    #     loss.backward()
+    #     print(loss.data)
+    #     optim.update()
+    #     cumul_loss += loss.data
+    #
+    # # tqdm.write("Trained on {} samples \t Loss: {}".format(len(data), cumul_loss))
+    # return float(cumul_loss / len(data)), float(cumul_loss)
 
-    # tqdm.write("Trained on {} samples \t Loss: {}".format(len(data), cumul_loss))
-    return float(cumul_loss / len(data)), float(cumul_loss)
+
+def rgb2gray(rgb):
+    return np.dot(rgb[...,:3], [0.299, 0.587, 0.114])
 
 
-def preprocess_obs(obs, dim=2):
+def preprocess_obs(obs, dim=3):
     """
     Process one observation to a 1D array
     :param obs:
     :return:
     """
-
+    obs = rgb2gray(obs)
     obs = obs.astype(np.float32)
-
     if args.env == "Pong-v0":
         obs = obs[35:195]  # crop
-        obs = obs[::2, ::2, :]  # downsample by factor of 2
-        obs = obs[:, :, 0]  # use only only RED
-        obs[obs == 144] = 0  # erase background (background type 1)
-        obs[obs == 109] = 0  # erase background (background type 2)
-        obs[obs != 0] = 1  # everything else (paddles, ball) just set to 1
+        obs = obs[::2, ::2]  # downsample by factor of 2
+        # obs = obs[:, :, 0]  # use only only RED
+        # obs[obs == 144] = 0  # erase background (background type 1)
+        # obs[obs == 109] = 0  # erase background (background type 2)
+        # obs[obs != 0] = 1  # everything else (paddles, ball) just set to 1
 
-        if dim == 2:
-            obs = obs.ravel()
-        elif dim == 3:
-            obs = np.expand_dims(obs, axis=0)
+    elif args.env == "Breakout-v0":
+        obs = obs[35:195, 8:152]  # crop
+        obs = obs[::2, ::2]  # downsample by factor of 2
+
+    elif args.env == "SpaceInvaders-v0":
+        obs = obs[:195, :]  # crop
+
+    if dim == 2:
+        obs = obs.ravel()
+    elif dim == 3:
+        obs = np.expand_dims(obs, axis=0)
 
     obs = np.expand_dims(obs, axis=0)
     return obs
@@ -151,7 +191,7 @@ def train():
     rewards = []
     losses = []
     tqdm.write(" {:^5} | {:^10} | {:^5} | {:^10} | {:^10} | {:^12} | {:^10} | {:^15}\n".format(
-        "Game", "Epsilon", "Score", "Total Avg", "Score@10", "Total Moves", "Avg Loss", "Total Loss")
+        "Game", "Epsilon", "Score", "Total Avg", "Score@10", "Total Moves", "Loss", "Avg Loss")
                + "-"*100)
     with open("{}.progress".format(args.env), 'w') as f:
 
@@ -181,7 +221,7 @@ def train():
 
                 prev_obs = cur_obs
 
-                q_values, taken_action, _ = compute_action(state, deterministic=False)
+                _ , taken_action, _ = compute_action(state, deterministic=False)
 
                 cur_obs, reward, done, info = env.step(taken_action)
                 cur_obs = preprocess_obs(cur_obs, dim=3)
@@ -211,20 +251,20 @@ def train():
 
                 # Simple DQN approach - Pin it on Value Iteration / Reward Propagation
                 if len(replay_memory) is args.replay_size:
-                    replay_memory[randint(0, len(replay_memory)-1)] = [state, state_future, q_values, taken_action, done, reward]
+                    replay_memory[randint(0, len(replay_memory)-1)] = [state, state_future, taken_action, done, reward]
                 else:
-                    replay_memory.append([state, state_future, q_values, taken_action, done, reward])
+                    replay_memory.append([state, state_future, taken_action, done, reward])
 
                 # Update after every args.update_threshold frames
                 if moves % args.update_threshold is 0 and len(replay_memory) > args.batch_size:
                     train_data = [replay_memory[randint(0, len(replay_memory) - 1)] for _ in range(args.batch_size)]
-                    avg_loss, _ = process_data(train_data)
-                    loss_list.append(avg_loss)
-                    losses.append(avg_loss)
+                    loss = process_data(train_data)
+                    loss_list.append(loss)
+                    losses.append(loss)
 
                 if done:
                     rewards.append(running_reward)
-                    batch_loss = "N/A"
+                    game_loss = "N/A"
                     avg_loss = "N/A"
                     # # Old Approach
                     # if game_nr % args.update_threshold == 0:
@@ -236,11 +276,11 @@ def train():
 
                     # Update after X frames Method
                     if len(loss_list) > 0:
-                        batch_loss = sum([avg * args.batch_size for avg in loss_list])
-                        avg_loss = sum(loss_list) / len(loss_list)
+                        game_loss = sum(loss_list) / len(loss_list)
+                        avg_loss = sum(losses) / len(losses)
                         loss_list.clear()
-                        avg_loss = "{:.2E}".format(Decimal(avg_loss))
-                        batch_loss = "{:.2E}".format(Decimal(batch_loss))
+                        avg_loss = "{:15.10f}".format(avg_loss)
+                        game_loss = "{:10.8f}".format(game_loss)
 
                     # train_data = [batch[randint(0, len(batch) - 1)] for _ in range(args.batch_size)]
                     # avg_loss, batch_loss = process_data(train_data)
@@ -249,7 +289,7 @@ def train():
                         tqdm.write(" {:5d} | {:10.8f} | {:+5.0f} | {:10.5f} | {:10.5f} | {:12d} | {:^10} | {:^15}".format(
                             game_nr, eps_threshold, running_reward, sum(rewards)/len(rewards),
                             sum(rewards[-10:])/len(rewards[-10:]),
-                            moves, avg_loss, batch_loss
+                            moves, game_loss, avg_loss
                             )
                         )
                     break
@@ -274,7 +314,7 @@ if __name__ == "__main__":
     parser.add_argument("--output", dest="outfile",
                         help="Path to output model")
     parser.add_argument("--env", dest="env",
-                        help="Environment Name", default="Pong-v0")
+                        help="Environment Name", default="SpaceInvaders-v0")
     parser.add_argument("--hidden", dest="n_hidden", type=int, default=256,
                         help="Amount of hidden units")
     parser.add_argument("--feature-maps", dest="n_feature_maps", type=int, default=12,
@@ -289,7 +329,7 @@ if __name__ == "__main__":
                         help="Learning Rate")
     parser.add_argument("--epsilon", dest="epsilon", type=float, default=0.1,
                         help="Chance of doing a random action")
-    parser.add_argument("--epsilon-decay", dest="epsilon_decay", type=float, default=2000000,
+    parser.add_argument("--epsilon-decay", dest="epsilon_decay", type=float, default=24000,
                         help="Measure at which epsilon decays (very game dependent!)")
     parser.add_argument("--gamma", dest="gamma", type=float, default=0.99,
                         help="Discount factor")
@@ -311,6 +351,7 @@ if __name__ == "__main__":
 
     env = gym.make(args.env)
 
+
     epsilon_max = 1
     epsilon_min = args.epsilon
     epsilon_decay = args.epsilon_decay
@@ -321,9 +362,8 @@ if __name__ == "__main__":
     net = CNN(n_actions=env.action_space.n)
     if chainer.cuda.available:
         net.to_gpu()
-    optim = optimizers.RMSprop(lr=args.alpha)
+    optim = optimizers.RMSpropGraves(lr=args.alpha, momentum=0.8)
     optim.setup(net)
-    optim.add_hook(chainer.optimizer.GradientClipping(1))
 
     train()
 
