@@ -1,5 +1,6 @@
 import chainer.functions as F
 import chainer.optimizers as optimizers
+import chainer.optimizer as optimizer
 import matplotlib as mpl
 from chainer import serializers
 from chainer import Variable
@@ -53,6 +54,11 @@ def process_data(data):
     """
     cumul_loss = 0
     backprop_temp = []
+    print(data[1][0])
+    print(np.array(data[1]).shape)
+    max_next_qs = net(np.array(data[1]))
+    print(max_next_qs)
+
     for cur_state, next_state, old_q, taken_action, terminal, reward in data:
 
         with chainer.no_backprop_mode():
@@ -68,6 +74,7 @@ def process_data(data):
     for old_q, new_q in backprop_temp:
         new_q = chainer.cuda.to_gpu(new_q) if chainer.cuda.available else new_q
         loss = F.huber_loss(old_q, Variable(new_q), 1)
+        print(loss.data)
         net.cleargrads()
         loss.backward()
         optim.update()
@@ -88,7 +95,8 @@ def preprocess_obs(obs, dim=2):
 
     if args.env == "Pong-v0":
         obs = obs[35:195]  # crop
-        obs = obs[::2, ::2, 0]  # downsample by factor of 2 and take only RED
+        obs = obs[::2, ::2, :]  # downsample by factor of 2
+        obs = obs[:, :, 0]  # use only only RED
         obs[obs == 144] = 0  # erase background (background type 1)
         obs[obs == 109] = 0  # erase background (background type 2)
         obs[obs != 0] = 1  # everything else (paddles, ball) just set to 1
@@ -267,27 +275,27 @@ if __name__ == "__main__":
                         help="Path to output model")
     parser.add_argument("--env", dest="env",
                         help="Environment Name", default="Pong-v0")
-    parser.add_argument("--hidden", dest="n_hidden", type=int, default=512,
+    parser.add_argument("--hidden", dest="n_hidden", type=int, default=256,
                         help="Amount of hidden units")
     parser.add_argument("--feature-maps", dest="n_feature_maps", type=int, default=12,
                         help="Amount of feature maps")
-    parser.add_argument("--epochs", dest="n_epoch", type=int, default=20000,
+    parser.add_argument("--epochs", dest="n_epoch", type=int, default=2000,
                         help="Amount of epochs")
-    parser.add_argument("--replay-size", dest="replay_size", type=int, default=1000000,
+    parser.add_argument("--replay-size", dest="replay_size", type=int, default=100000,
                         help="Size of replay buffer")
     parser.add_argument("--batch-size", dest="batch_size", type=int, default=128,
                         help="Size of Batch Size")
     parser.add_argument("--alpha", dest="alpha", type=float, default=1e-5,
                         help="Learning Rate")
-    parser.add_argument("--epsilon", dest="epsilon", type=float, default=0.05,
+    parser.add_argument("--epsilon", dest="epsilon", type=float, default=0.1,
                         help="Chance of doing a random action")
-    parser.add_argument("--epsilon-decay", dest="epsilon_decay", type=float, default=200000,
+    parser.add_argument("--epsilon-decay", dest="epsilon_decay", type=float, default=2000000,
                         help="Measure at which epsilon decays (very game dependent!)")
     parser.add_argument("--gamma", dest="gamma", type=float, default=0.99,
                         help="Discount factor")
     parser.add_argument("--decay-rate", dest="decay_rate", type=float, default=0.99,
                         help="Decay rate for future rewards")
-    parser.add_argument("--update-after", dest="update_threshold", type=int, default=100,
+    parser.add_argument("--update-after", dest="update_threshold", type=int, default=50,
                         help="Number of frames needed to update")
     parser.add_argument("--plot-every", dest="plot_every", type=int, default=1,
                         help="Number of games before showing summary")
@@ -310,11 +318,12 @@ if __name__ == "__main__":
 
     total_moves = 0
 
-    net = FCN(n_actions=env.action_space.n)
+    net = CNN(n_actions=env.action_space.n)
     if chainer.cuda.available:
         net.to_gpu()
     optim = optimizers.RMSprop(lr=args.alpha)
     optim.setup(net)
+    optim.add_hook(chainer.optimizer.GradientClipping(1))
 
     train()
 
