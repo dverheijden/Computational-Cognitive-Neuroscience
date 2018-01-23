@@ -16,9 +16,22 @@ from random import shuffle, randint
 from decimal import Decimal
 import math
 from copy import deepcopy
+import chainer.computational_graph as c
+import os
 
 
 def summary(rewards, loss):
+    if not os.path.exists("results/{}".format(args.env)):
+        os.makedirs("results/{}".format(args.env))
+
+    with open("results/{}/{}_reward.csv".format(args.env, time.strftime("%Y-%m-%d-%H:%M")), 'w') as r_file:
+        for r in rewards:
+            r_file.write("{}\n".format(r))
+
+    with open("results/{}/{}_loss.csv".format(args.env, time.strftime("%Y-%m-%d-%H:%M")), 'w') as l_file:
+        for l in loss:
+            l_file.write("{}\n".format(l))
+
     avgs = [0]
     for n in range(len(rewards)):
         avg = (avgs[-1]*n + rewards[n]) / (n+1)
@@ -31,17 +44,19 @@ def summary(rewards, loss):
     plt.xlabel("Game")
     plt.ylabel("Reward")
     plt.title("Reward as a function of nr. of games")
-    plt.savefig("result/summary_reward_{}.png".format(time.strftime("%d-%m-%Y %H:%M:%S")), format="png")
+    plt.savefig("results/{}/{}_summary_reward.png".format(args.env, time.strftime("%Y-%m-%d-%H:%M")), format="png")
+    plt.savefig("results/{}/{}_summary_reward.eps".format(args.env, time.strftime("%Y-%m-%d-%H:%M")), format="eps")
 
     if not args.headless:
         plt.show()
 
     plt.figure()
     plt.plot(loss)
-    plt.xlabel("Batch")
+    plt.xlabel("Update")
     plt.ylabel("Loss")
-    plt.title("Loss as a function of nr. of games")
-    plt.savefig("result/summary_loss_{}.png".format(time.strftime("%d-%m-%Y %H:%M:%S")), format="png")
+    plt.title("Loss as a function of nr. of updates")
+    plt.savefig("results/{}/{}_summary_loss.png".format(args.env, time.strftime("%Y-%m-%d-%H:%M")), format="png")
+    plt.savefig("results/{}/{}_summary_loss.eps".format(args.env, time.strftime("%Y-%m-%d-%H:%M")), format="eps")
 
     if not args.headless:
         plt.show()
@@ -60,14 +75,18 @@ def process_data(data):
     data = np.array(data)
     cur_states = np.stack(data[:, 0], axis=1)
     cur_states = np.squeeze(cur_states, axis=0)
+    cur_states = chainer.cuda.to_gpu(cur_states) if chainer.cuda.available else cur_states
     cur_qs = net(cur_states)
+    cur_qs.name = "current Q-Values"
 
     next_states = np.stack(data[:, 1], axis=1)
     next_states = np.squeeze(next_states, axis=0)
+    next_states = chainer.cuda.to_gpu(next_states) if chainer.cuda.available else next_states
     next_qs = net(next_states)
 
     with chainer.no_backprop_mode():  # Don't think this actually does anything, but better safe than sorry
         target_qs = deepcopy(cur_qs.data)
+        target_qs = chainer.cuda.to_cpu(target_qs) if chainer.cuda.available else target_qs
         # Memory Efficiency
         # taken_action = data[:, 2]
         # terminal = data[:, 3]
@@ -76,13 +95,20 @@ def process_data(data):
             # Q(s, a) = r + gamma * max_a(Q(s',a')) if game not over else r
             target_qs[i, data[i, 2]] = data[i, 4] + args.gamma * next_qs.data[i, :].max() if not data[i, 3] else data[i, 2]
 
-    # loss = F.huber_loss(cur_qs, Variable(target_qs), 1)
-    loss = F.mean_squared_error(cur_qs, target_qs)
+    target_qs = chainer.cuda.to_gpu(target_qs) if chainer.cuda.available else target_qs
+    loss = F.squared_error(cur_qs, target_qs)
+
+    # Debugging Information
+    # g = c.build_computational_graph(loss)
+    # with open('computational_graph.graph', 'w') as o:
+    #     o.write(g.dump())
+
+    loss = F.mean(loss)
     net.cleargrads()
     loss.backward()
     optim.update()
 
-    return loss.data
+    return float(loss.data)
     #
     # for cur_state, next_state, taken_action, terminal, reward in data:
     #     cur_states = np.concatenate([cur_states, cur_state])
@@ -124,6 +150,10 @@ def preprocess_obs(obs, dim=3):
     :param obs:
     :return:
     """
+    if args.env == "CartPole-v0":
+        obs = obs.astype(np.float32)
+        return np.expand_dims(obs, axis=0)
+
     obs = rgb2gray(obs)
     obs = obs.astype(np.float32)
     if args.env == "Pong-v0":
@@ -199,9 +229,11 @@ def train():
         replay_memory = []
         loss_list = []
 
+        dim = 3 if not args.toy else 2
+
         for game_nr in tqdm(range(1, args.n_epoch+1), unit="game", ascii=True, file=f):
             prev_obs = None
-            cur_obs = preprocess_obs(env.reset(), dim=3)
+            cur_obs = preprocess_obs(env.reset(), dim=dim)
 
             running_reward = 0
 
@@ -214,7 +246,7 @@ def train():
                 if not args.headless:
                     env.render()
 
-                if args.env != "CartPole-v0":
+                if not args.toy:
                     state = np.subtract(cur_obs, prev_obs) if prev_obs is not None else np.zeros(cur_obs.shape, dtype=np.float32)
                 else:
                     state = cur_obs
@@ -224,7 +256,7 @@ def train():
                 _ , taken_action, _ = compute_action(state, deterministic=False)
 
                 cur_obs, reward, done, info = env.step(taken_action)
-                cur_obs = preprocess_obs(cur_obs, dim=3)
+                cur_obs = preprocess_obs(cur_obs, dim=dim)
 
                 if reward != 0:
                     reward = -1 if reward < 0 else 1
@@ -256,7 +288,7 @@ def train():
                     replay_memory.append([state, state_future, taken_action, done, reward])
 
                 # Update after every args.update_threshold frames
-                if moves % args.update_threshold is 0 and len(replay_memory) > args.batch_size:
+                if moves % args.update_threshold is 0 and len(replay_memory) > args.replay_size_min:
                     train_data = [replay_memory[randint(0, len(replay_memory) - 1)] for _ in range(args.batch_size)]
                     loss = process_data(train_data)
                     loss_list.append(loss)
@@ -274,19 +306,20 @@ def train():
                     #     avg_loss = "{:.2E}".format(Decimal(avg_loss))
                     #     batch_loss = "{:.2E}".format(Decimal(batch_loss))
 
-                    # Update after X frames Method
-                    if len(loss_list) > 0:
-                        game_loss = sum(loss_list) / len(loss_list)
-                        avg_loss = sum(losses) / len(losses)
-                        loss_list.clear()
-                        avg_loss = "{:15.10f}".format(avg_loss)
-                        game_loss = "{:10.8f}".format(game_loss)
 
                     # train_data = [batch[randint(0, len(batch) - 1)] for _ in range(args.batch_size)]
                     # avg_loss, batch_loss = process_data(train_data)
                     # losses.append(avg_loss)
                     if game_nr % args.plot_every is 0:
-                        tqdm.write(" {:5d} | {:10.8f} | {:+5.0f} | {:10.5f} | {:10.5f} | {:12d} | {:^10} | {:^15}".format(
+                        # Update after X frames Method
+                        if len(loss_list) > 0:
+                            game_loss = sum(loss_list) / len(loss_list)
+                            avg_loss = sum(losses) / len(losses)
+                            loss_list.clear()
+                            avg_loss = "{:15.10f}".format(avg_loss)
+                            game_loss = "{:10.8f}".format(game_loss)
+
+                        tqdm.write(" {:5d} | {:10.8f} | {:+5.0f} | {:10.5f} | {:10.5f} | {:12d} | {:^10s} | {:^15s}".format(
                             game_nr, eps_threshold, running_reward, sum(rewards)/len(rewards),
                             sum(rewards[-10:])/len(rewards[-10:]),
                             moves, game_loss, avg_loss
@@ -295,16 +328,7 @@ def train():
                     break
 
     summary(rewards, losses)
-    serializers.save_hdf5(args.outfile if args.outfile else args.env, net)
-
-
-def str2bool(v):
-    if v.lower() in ('yes', 'true', 't', 'y', '1'):
-        return True
-    elif v.lower() in ('no', 'false', 'f', 'n', '0'):
-        return False
-    else:
-        raise argparse.ArgumentTypeError('Boolean value expected.')
+    serializers.save_hdf5("results/{}/{}".format(args.env, args.outfile) , net)
 
 
 if __name__ == "__main__":
@@ -323,12 +347,16 @@ if __name__ == "__main__":
                         help="Amount of epochs")
     parser.add_argument("--replay-size", dest="replay_size", type=int, default=100000,
                         help="Size of replay buffer")
+    parser.add_argument("--replay-size-initial", dest="replay_size_min", type=int, default=2000,
+                        help="Size of replay buffer")
     parser.add_argument("--batch-size", dest="batch_size", type=int, default=128,
                         help="Size of Batch Size")
     parser.add_argument("--alpha", dest="alpha", type=float, default=1e-5,
                         help="Learning Rate")
-    parser.add_argument("--epsilon", dest="epsilon", type=float, default=0.1,
-                        help="Chance of doing a random action")
+    parser.add_argument("--epsilon-min", dest="epsilon_min", type=float, default=0.05,
+                        help="Minimum probability of doing a random action")
+    parser.add_argument("--epsilon-max", dest="epsilon_max", type=float, default=0.8,
+                        help="Maximum probability of doing a random action")
     parser.add_argument("--epsilon-decay", dest="epsilon_decay", type=float, default=24000,
                         help="Measure at which epsilon decays (very game dependent!)")
     parser.add_argument("--gamma", dest="gamma", type=float, default=0.99,
@@ -339,8 +367,10 @@ if __name__ == "__main__":
                         help="Number of frames needed to update")
     parser.add_argument("--plot-every", dest="plot_every", type=int, default=1,
                         help="Number of games before showing summary")
-    parser.add_argument("--headless", type=str2bool, nargs='?', const=True, default=False,
+    parser.add_argument("--headless", action="store_true",
                         help="Headless mode, suppresses rendering and plotting")
+    parser.add_argument("--toy", action='store_true',
+                        help="Create shallow networks")
     args = parser.parse_args()
     print(args)
 
@@ -351,18 +381,17 @@ if __name__ == "__main__":
 
     env = gym.make(args.env)
 
-
-    epsilon_max = 1
-    epsilon_min = args.epsilon
+    epsilon_max = args.epsilon_max
+    epsilon_min = args.epsilon_min
     epsilon_decay = args.epsilon_decay
     eps_threshold = 1
 
     total_moves = 0
 
-    net = CNN(n_actions=env.action_space.n)
+    net = CNN(n_actions=env.action_space.n) if not args.toy else FCN(n_actions=env.action_space.n)
     if chainer.cuda.available:
         net.to_gpu()
-    optim = optimizers.RMSpropGraves(lr=args.alpha, momentum=0.8)
+    optim = optimizers.RMSpropGraves(lr=args.alpha, momentum=0.8) if not args.toy else optimizers.RMSprop(lr=args.alpha)
     optim.setup(net)
 
     train()

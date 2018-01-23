@@ -2,6 +2,7 @@
 **/.idea/
 **/__pycache__/
 **/result/
+**/results/
 **/.ipynb_checkpoints/
 **/*.pickle
 .vscode/
