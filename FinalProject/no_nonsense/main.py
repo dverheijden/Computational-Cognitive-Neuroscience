@@ -18,6 +18,7 @@ import math
 from copy import deepcopy
 import chainer.computational_graph as c
 import os
+from wrappes import SkipWrapper
 
 
 def summary(rewards, loss):
@@ -325,6 +326,9 @@ if __name__ == "__main__":
     import matplotlib.pyplot as plt
 
     env = gym.make(args.env)
+    if not args.toy:
+        wrapper = SkipWrapper(4)
+        env = wrapper(env)
 
     epsilon_max = args.epsilon_max
     epsilon_min = args.epsilon_min
