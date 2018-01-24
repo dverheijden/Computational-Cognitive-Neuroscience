@@ -72,29 +72,38 @@
 \end{abstract}
 
 \section{Introduction}
+Vertellen over atari, recent advances. Feel krijgen over hoe complex door zelf implementeren w/e.
 
+\section{Background}
+model beschrijven in termen van _states rewards en actions_ + Q-learning (is pure value iteration aka rewards propagaten van de terminal state naar de eerste zet in episodes)
 
-\section{The model}
-model beschrijven + onze RL toepassingen
+\section{Related Work}
+Not sure... Misschien wat vertellen over de guru paper \cite{mnih2013playing} + mogelijke verbeteringen in NATURE \cite{mnih2015human}
 
+\section{Deep Q-Learning}
 
-\section{Experiments}
-\subsection{Pong}
-Hier wat beschrijven over de pong environment en de challenges? bijv niet meteen een reward
+\subsection{Preprocessing}
+Hoe we data eerst verwerken voor complexiteit vermindering + wat input model is (stacked frames) zie \cite{mnih2013playing}
 
-\subsection{Preprocessing?}
-Hoe we data eerst verwerken voor complexiteit vermindering?
+\subsection{Reward Clipping}
+Envs hebben andere manier van reward, wij $[-1, 0, 1]$
+
+\subsection{Replay Memory}
+Om patronen te voorkomen \cite{mnih2013playing}
 
 \subsection{Training details}
 model initializatie + parameters etc. (qua hidden layers e.d.)
+Huber loss vs. MSE
 
-\subsection{Results}
 
-\section{Related work}
-Geen idee? Misschien vertellen over PNN en de relatie tot dit?
+\section{Results}
 
 
 \section{Conclusion}
+
+
+\section{Discussion}
+Complexer dan we dachten + link naar PNN
 
 \cite{*}
 \bibliography{bibliography}
