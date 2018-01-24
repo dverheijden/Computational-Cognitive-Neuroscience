@@ -21,7 +21,7 @@
 \usepackage{nicefrac}       % compact symbols for 1/2, etc.
 \usepackage{microtype}      % microtypography
 
-\title{Progressive Neural Networks}
+\title{Pitfalls Encountered When Implementing Complex Neural Networks Like Progressive Neural Networks}
 
 % The \author macro works with any number of authors. There are two
 % commands used to separate the names and addresses of multiple
@@ -36,7 +36,7 @@
 \author{
   Dennis Verheijden\\
   s4455770
-    \And
+  \And
   Joost Besseling\\
   s4796799
   %% examples of more authors
@@ -63,7 +63,7 @@
 }
 
 \begin{document}
-% \nipsfinalcopy is no longer used
+ %\nipsfinalcopy is no longer used
 
 \maketitle
 
@@ -74,8 +74,14 @@
 \section{Introduction}
 Vertellen over atari, recent advances. Feel krijgen over hoe complex door zelf implementeren w/e.
 
+The Atari Gym \cite{1606.01540} environment is a modern environment to train and test various reinforcement learning algorithms, on a difficult, real time, task. The gym has a large variety of different games that we can test our algorithms on. We wanted to implement and train a novel neural network in Chainer \cite{chainer_learningsys2015}. We tried implementing a Progressive Neural Network, as proposed by \cite{rusu2016progressive}. 
+
+Unfortunately, we encountered some difficulties when implementing the network in Chainer. In this document we will give an outline of what went wrong, and what went right, so researcher know what problems they should avoid when using Chainer % using chainer is the problem
+
+We also implemented a simpler neural network to ensure ourselves that this was possible in Chainer.
+
 \section{Background}
-model beschrijven in termen van _states rewards en actions_ + Q-learning (is pure value iteration aka rewards propagaten van de terminal state naar de eerste zet in episodes)
+model beschrijven in termen van \emph{states rewards en actions} + Q-learning (is pure value iteration aka rewards propagaten van de terminal state naar de eerste zet in episodes)
 
 \section{Related Work}
 Not sure... Misschien wat vertellen over de guru paper \cite{mnih2013playing} + mogelijke verbeteringen in NATURE \cite{mnih2015human}
