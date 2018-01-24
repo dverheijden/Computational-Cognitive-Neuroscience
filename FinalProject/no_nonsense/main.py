@@ -61,6 +61,8 @@ def summary(rewards, loss):
     if not args.headless:
         plt.show()
 
+    serializers.save_hdf5("results/{}/{}".format(args.env, args.outfile), net)
+
 
 def process_data(data):
     """
@@ -109,39 +111,10 @@ def process_data(data):
     optim.update()
 
     return float(loss.data)
-    #
-    # for cur_state, next_state, taken_action, terminal, reward in data:
-    #     cur_states = np.concatenate([cur_states, cur_state])
-    #     next_states = np.concatenate([next_states, next_state])
-    #
-    # for cur_state, next_state, taken_action, terminal, reward in data:
-    #     old_q = net(cur_state)
-    #     with chainer.no_backprop_mode():
-    #         new_q = deepcopy(old_q.data[0])
-    #         new_q = chainer.cuda.to_cpu(new_q) if chainer.cuda.available else new_q
-    #
-    #         _, _, max_next_Q = compute_action(next_state, deterministic=True)
-    #
-    #         new_q[taken_action] = reward + args.gamma * max_next_Q.data if not terminal else reward
-    #         new_q = np.expand_dims(new_q, axis=0)
-    #         backprop_temp.append([old_q, new_q])
-    #
-    # for old_q, new_q in backprop_temp:
-    #     new_q = chainer.cuda.to_gpu(new_q) if chainer.cuda.available else new_q
-    #     loss = F.huber_loss(old_q, Variable(new_q), 1)
-    #
-    #     net.cleargrads()
-    #     loss.backward()
-    #     print(loss.data)
-    #     optim.update()
-    #     cumul_loss += loss.data
-    #
-    # # tqdm.write("Trained on {} samples \t Loss: {}".format(len(data), cumul_loss))
-    # return float(cumul_loss / len(data)), float(cumul_loss)
 
 
 def rgb2gray(rgb):
-    return np.dot(rgb[...,:3], [0.299, 0.587, 0.114])
+    return np.dot(rgb[..., :3], [0.299, 0.587, 0.114]) / 255
 
 
 def preprocess_obs(obs, dim=3):
@@ -225,7 +198,6 @@ def train():
                + "-"*100)
     with open("{}.progress".format(args.env), 'w') as f:
 
-        temp_memory = []
         replay_memory = []
         loss_list = []
 
@@ -246,7 +218,7 @@ def train():
                 if not args.headless:
                     env.render()
 
-                if not args.toy:
+                if not args.env == "CartPole-v0":
                     state = np.subtract(cur_obs, prev_obs) if prev_obs is not None else np.zeros(cur_obs.shape, dtype=np.float32)
                 else:
                     state = cur_obs
@@ -268,19 +240,6 @@ def train():
 
                 running_reward += reward
 
-                # # Old Approach...
-                # temp_memory.append([state, state_future, q_values, taken_action, done])
-                #
-                # if reward != 0 or done:
-                #     # Distribute discounted reward to previous actions
-                #     discounted_reward = discount_reward(temp_memory, reward)
-                #     for i in range(len(temp_memory)):
-                #         temp_memory[i].extend([discounted_reward[i]])
-                #     replay_memory.extend(temp_memory)  # append to training data
-                #     temp_memory.clear()
-                #     while len(replay_memory) > args.replay_size:
-                #         del replay_memory[np.random.randint(0, len(replay_memory))]
-
                 # Simple DQN approach - Pin it on Value Iteration / Reward Propagation
                 if len(replay_memory) is args.replay_size:
                     replay_memory[randint(0, len(replay_memory)-1)] = [state, state_future, taken_action, done, reward]
@@ -296,30 +255,17 @@ def train():
 
                 if done:
                     rewards.append(running_reward)
-                    game_loss = "N/A"
-                    avg_loss = "N/A"
-                    # # Old Approach
-                    # if game_nr % args.update_threshold == 0:
-                    #     shuffle(replay_memory)
-                    #     avg_loss, batch_loss = process_data(replay_memory)
-                    #     losses.append(avg_loss)
-                    #     avg_loss = "{:.2E}".format(Decimal(avg_loss))
-                    #     batch_loss = "{:.2E}".format(Decimal(batch_loss))
+                    game_loss = float('NaN')
+                    avg_loss = float('NaN')
 
-
-                    # train_data = [batch[randint(0, len(batch) - 1)] for _ in range(args.batch_size)]
-                    # avg_loss, batch_loss = process_data(train_data)
-                    # losses.append(avg_loss)
                     if game_nr % args.plot_every is 0:
                         # Update after X frames Method
                         if len(loss_list) > 0:
                             game_loss = sum(loss_list) / len(loss_list)
                             avg_loss = sum(losses) / len(losses)
                             loss_list.clear()
-                            avg_loss = "{:15.10f}".format(avg_loss)
-                            game_loss = "{:10.8f}".format(game_loss)
 
-                        tqdm.write(" {:5d} | {:10.8f} | {:+5.0f} | {:10.5f} | {:10.5f} | {:12d} | {:^10s} | {:^15s}".format(
+                        tqdm.write(" {:5d} | {:10.8f} | {:+5.0f} | {:10.5f} | {:10.5f} | {:12d} | {:^10f} | {:^15f}".format(
                             game_nr, eps_threshold, running_reward, sum(rewards)/len(rewards),
                             sum(rewards[-10:])/len(rewards[-10:]),
                             moves, game_loss, avg_loss
@@ -328,7 +274,6 @@ def train():
                     break
 
     summary(rewards, losses)
-    serializers.save_hdf5("results/{}/{}".format(args.env, args.outfile) , net)
 
 
 if __name__ == "__main__":
@@ -367,9 +312,9 @@ if __name__ == "__main__":
                         help="Number of frames needed to update")
     parser.add_argument("--plot-every", dest="plot_every", type=int, default=1,
                         help="Number of games before showing summary")
-    parser.add_argument("--headless", action="store_true",
+    parser.add_argument("--headless", action="store_true", required=False,
                         help="Headless mode, suppresses rendering and plotting")
-    parser.add_argument("--toy", action='store_true',
+    parser.add_argument("--toy", action='store_true', required=False,
                         help="Create shallow networks")
     args = parser.parse_args()
     print(args)
@@ -391,7 +336,7 @@ if __name__ == "__main__":
     net = CNN(n_actions=env.action_space.n) if not args.toy else FCN(n_actions=env.action_space.n)
     if chainer.cuda.available:
         net.to_gpu()
-    optim = optimizers.RMSpropGraves(lr=args.alpha, momentum=0.8) if not args.toy else optimizers.RMSprop(lr=args.alpha)
+    optim = optimizers.RMSprop(lr=args.alpha)
     optim.setup(net)
 
     train()

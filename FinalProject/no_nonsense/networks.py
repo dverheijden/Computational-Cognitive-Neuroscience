@@ -14,23 +14,26 @@ layer has 256 hidden units.
 class CNN(Chain):
     def __init__(self, n_actions, n_feature_maps=12, n_hidden_units=256):
         super(CNN, self).__init__()
-        self.toy = toy
         with self.init_scope():
             self.conv1 = L.Convolution2D(in_channels=1, out_channels=n_feature_maps, ksize=8, stride=4)
             self.conv2 = L.Convolution2D(in_channels=n_feature_maps, out_channels=n_feature_maps, ksize=4, stride=2)
             self.conv3 = L.Convolution2D(in_channels=n_feature_maps, out_channels=n_feature_maps, ksize=2, stride=1)
             self.fc1 = L.Linear(in_size=None, out_size=n_hidden_units)
             self.fc2 = L.Linear(in_size=None, out_size=n_actions)
-            self.bn1 = L.BatchNormalization(n_feature_maps)
-            self.bn2 = L.BatchNormalization(n_feature_maps)
-            self.bn3 = L.BatchNormalization(n_feature_maps)
-            self.bn4 = L.BatchNormalization(n_hidden_units)
+            # self.bn1 = L.BatchNormalization(n_feature_maps)
+            # self.bn2 = L.BatchNormalization(n_feature_maps)
+            # self.bn3 = L.BatchNormalization(n_feature_maps)
+            # self.bn4 = L.BatchNormalization(n_hidden_units)
 
     def __call__(self, x):
-        h = self.bn1(F.relu(self.conv1(x)))
-        h = self.bn2(F.relu(self.conv2(h)))
-        h = self.bn3(F.relu(self.conv3(h)))
-        h = self.bn4(F.relu(self.fc1(h)))
+        # h = self.bn1(F.relu(self.conv1(x)))
+        # h = self.bn2(F.relu(self.conv2(h)))
+        # h = self.bn3(F.relu(self.conv3(h)))
+        # h = self.bn4(F.relu(self.fc1(h)))
+        h = F.relu(self.conv1(x))
+        h = F.relu(self.conv2(h))
+        h = F.relu(self.conv3(h))
+        h = F.relu(self.fc1(h))
         h = self.fc2(h)
 
         return h
