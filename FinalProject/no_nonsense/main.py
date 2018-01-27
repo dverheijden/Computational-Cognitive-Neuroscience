@@ -18,7 +18,7 @@ import math
 from copy import deepcopy
 import chainer.computational_graph as c
 import os
-from wrappes import SkipWrapper
+from wrappes import FrameStackWrapper, ResetLifeLostWrapper
 
 
 def summary(rewards, loss):
@@ -72,8 +72,6 @@ def process_data(data):
     :param data:
     :return:
     """
-    cumul_loss = 0
-    backprop_temp = []
 
     data = np.array(data)
     cur_states = np.stack(data[:, 0], axis=1)
@@ -145,9 +143,9 @@ def preprocess_obs(obs, dim=3):
     elif args.env == "SpaceInvaders-v0":
         obs = obs[:195, :]  # crop
 
-    if dim == 2:
+    if dim == 2:  # For MLP input
         obs = obs.ravel()
-    elif dim == 3:
+    elif dim == 3:  # For Conv input
         obs = np.expand_dims(obs, axis=0)
 
     obs = np.expand_dims(obs, axis=0)
@@ -155,6 +153,14 @@ def preprocess_obs(obs, dim=3):
 
 
 def discount_reward(memory, cur_reward):
+    """
+    This was used in traditional Q-learning, however in DQN this is not used. DQN relies on pure value iteration.
+    The idea was that we discount rewards over states that had no (direct) reward. If a reward was gained, iterate over
+    the previous states without reward and give them a discounted reward value.
+    :param memory: game states
+    :param cur_reward: gained reward
+    :return:
+    """
     discounted_reward = np.zeros(len(memory))
     discounted_reward[-1] = cur_reward
     for t in reversed(range(0, len(memory) - 1)):
@@ -165,10 +171,10 @@ def discount_reward(memory, cur_reward):
 
 def compute_action(obs, deterministic):
     """
-    Computes the next action in an e-greedy fashion
+    Computes the next action in an e-greedy fashion, where e is decaying over the total number of steps taken
     :param obs:
-    :param deterministic:
-    :return:
+    :param deterministic: use epsilon or not
+    :return: q_values of the observation, index of the best action, maximum of the computed q_values
     """
     obs = chainer.cuda.to_gpu(obs) if chainer.cuda.available else obs  # Copy to GPU
     q_values = net(obs)
@@ -202,11 +208,11 @@ def train():
         replay_memory = []
         loss_list = []
 
-        dim = 3 if not args.toy else 2
+        obs_dimension = 3 if not args.toy else 2
 
         for game_nr in tqdm(range(1, args.n_epoch+1), unit="game", ascii=True, file=f):
             prev_obs = None
-            cur_obs = preprocess_obs(env.reset(), dim=dim)
+            cur_obs = preprocess_obs(env.reset(), dim=obs_dimension)
 
             running_reward = 0
 
@@ -229,7 +235,7 @@ def train():
                 _ , taken_action, _ = compute_action(state, deterministic=False)
 
                 cur_obs, reward, done, info = env.step(taken_action)
-                cur_obs = preprocess_obs(cur_obs, dim=dim)
+                cur_obs = preprocess_obs(cur_obs, dim=obs_dimension)
 
                 if reward != 0:
                     reward = -1 if reward < 0 else 1
@@ -297,6 +303,8 @@ if __name__ == "__main__":
                         help="Size of replay buffer")
     parser.add_argument("--batch-size", dest="batch_size", type=int, default=128,
                         help="Size of Batch Size")
+    parser.add_argument("--frames", dest="frames", type=int, default=4,
+                        help="Number of stacked frames per observation")
     parser.add_argument("--alpha", dest="alpha", type=float, default=1e-5,
                         help="Learning Rate")
     parser.add_argument("--epsilon-min", dest="epsilon_min", type=float, default=0.05,
@@ -327,8 +335,8 @@ if __name__ == "__main__":
 
     env = gym.make(args.env)
     if not args.toy:
-        wrapper = SkipWrapper(4)
-        env = wrapper(env)
+        env = FrameStackWrapper(env, args.frames)
+        env = ResetLifeLostWrapper(env)
 
     epsilon_max = args.epsilon_max
     epsilon_min = args.epsilon_min
@@ -337,7 +345,8 @@ if __name__ == "__main__":
 
     total_moves = 0
 
-    net = CNN(n_actions=env.action_space.n) if not args.toy else FCN(n_actions=env.action_space.n)
+    net = CNN(n_actions=env.action_space.n) if not args.toy \
+        else FCN(conv_channels=args.frames, n_actions=env.action_space.n)
     if chainer.cuda.available:
         net.to_gpu()
     optim = optimizers.RMSprop(lr=args.alpha)

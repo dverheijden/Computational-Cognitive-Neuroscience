@@ -12,10 +12,10 @@ layer has 256 hidden units.
 
 
 class CNN(Chain):
-    def __init__(self, n_actions, n_feature_maps=12, n_hidden_units=256):
+    def __init__(self, n_actions, conv_channels, n_feature_maps=12, n_hidden_units=256):
         super(CNN, self).__init__()
         with self.init_scope():
-            self.conv1 = L.Convolution2D(in_channels=1, out_channels=n_feature_maps, ksize=8, stride=4)
+            self.conv1 = L.Convolution2D(in_channels=conv_channels, out_channels=n_feature_maps, ksize=8, stride=4)
             self.conv2 = L.Convolution2D(in_channels=n_feature_maps, out_channels=n_feature_maps, ksize=4, stride=2)
             self.conv3 = L.Convolution2D(in_channels=n_feature_maps, out_channels=n_feature_maps, ksize=2, stride=1)
             self.fc1 = L.Linear(in_size=None, out_size=n_hidden_units)
