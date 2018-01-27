@@ -78,28 +78,48 @@ The Atari Gym \cite{1606.01540} environment is a modern environment to train and
 
 Unfortunately, we encountered some difficulties when implementing the network in Chainer. In this document we will give an outline of what went wrong, and what went right, so researcher know what problems they should avoid when using Chainer % using chainer is the problem
 
-We also implemented a simpler neural network to ensure ourselves that this was possible in Chainer.
+Finally, we implemented a simpler neural network architecture. We will discuss the results that this network achieved. 
 
 \section{Background}
-model beschrijven in termen van \emph{states rewards en actions} + Q-learning (is pure value iteration aka rewards propagaten van de terminal state naar de eerste zet in episodes)
+model beschrijven in termen van \emph{states rewards and actions} + Q-learning (is pure value iteration aka rewards propagaten van de terminal state naar de eerste zet in episodes)
 
 \section{Related Work}
+
 Not sure... Misschien wat vertellen over de guru paper \cite{mnih2013playing} + mogelijke verbeteringen in NATURE \cite{mnih2015human}
+
+Reinforcement learning is a very active field, so there is a lot of related work. In 2013 Mnih et al introduced a novel way to tackle the problem of reinforcement learning which they called Q-learning. This method is highly effective, achieving super human play in a number of games.
 
 \section{Deep Q-Learning}
 
 \subsection{Preprocessing}
 Hoe we data eerst verwerken voor complexiteit vermindering + wat input model is (stacked frames) zie \cite{mnih2013playing}
 
+Due to the complex nature of raw pixel data, it is a good idea to do a manual preprocessing steps on the data. Some of the difficulties of the raw pixel data: There are a lot of unused pixels in the game, for example the top of Pong only contains the score, so there is no useful information on this part of the screen. We can remove this from the input of the network, to reduce the complexity of the game. Another example is the fact that there is coloured data, the initial input exist of three (i.e. red, green, and blue) channels. By combining them into one input layer, we reduce the complexity even more, without throwing away necessary information.
+
+Another problem with Atari games is that one screen doesn't provide enough information to be able to infer the state of the game (e.g. what direction is the ball moving toward? What direction is the opponent going? Or in pacman, what directions are the ghosts moving in?). In order to mitigate this effect, first we used the difference between the previous screen and the next screen. But since this doesn't provide that much extra information, we decided to use another technique in which we stack the last $n$ frames \cite{mnih2013playing}. Essentialy, we introduce 4 channels, in which each channel contains an entire screen of the game. The idea is that the combination of the last four frames contain enough information to be able to accurately predict the state of the game.
+
+Other possible preprocessing techniques could be ... ???
+
 \subsection{Reward Clipping}
-Envs hebben andere manier van reward, wij $[-1, 0, 1]$
+
+Different environments in the Atari gym have different reward structures, which means that training on the different games would mean that we need different hyper parameters and learning rates . To reduce this effect, we clip all non-zero rewards to either $1$, or $-1$. Of course, this will have a negative effect on the agent, since it cannot differentiate between small and big rewards. We assume that this effect is not too big\cite{mnih2015human}.
+
 
 \subsection{Replay Memory}
 Om patronen te voorkomen \cite{mnih2013playing}
 
-\subsection{Training details}
+Since we are playing the game on real time in the atari environment, there will be a high correlation between succesive game-states. Which might lead the algorithm to get stuck in a negative feedback loop. Consider the scenario in which moving to the right in the beginning of the game gives an immediate positive reward, but makes the player get stuck in some ???!!!???
+
+In order to mitigate this effect, we use experience replay \cite{mnih2013playing}. We let the network gather some experience, before we start training the network; we let the network play the game, and we save the current game state, the taken action, the resulting reward and the resulting game state to a list of experiences. After the network has gained enough experience, we start training the network. Training is done by uniformly taking experiences from the experience list, and calculating the necessary things to train the network. More details on this will be provided in  chapter \ref{chapter:training}.
+
+\subsection{Training details} \label{chapter:training}
 model initializatie + parameters etc. (qua hidden layers e.d.)
 Huber loss vs. MSE
+
+The model is trained by utilizing the techniques mentioned before. 
+
+\subsection{Difficulties}
+
 
 
 \section{Results}
@@ -107,6 +127,7 @@ Huber loss vs. MSE
 
 \section{Conclusion}
 
+We can conclude that implement
 
 \section{Discussion}
 Complexer dan we dachten + link naar PNN
