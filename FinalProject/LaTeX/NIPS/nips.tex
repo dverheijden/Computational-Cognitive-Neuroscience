@@ -20,6 +20,8 @@
 \usepackage{amsfonts}       % blackboard math symbols
 \usepackage{nicefrac}       % compact symbols for 1/2, etc.
 \usepackage{microtype}      % microtypography
+\usepackage{algorithm}
+\usepackage{algorithmic}
 
 \title{Pitfalls Encountered When Implementing Complex Neural Networks Like Progressive Neural Networks}
 
@@ -81,7 +83,14 @@ Unfortunately, we encountered some difficulties when implementing the network in
 Finally, we implemented a simpler neural network architecture. We will discuss the results that this network achieved. 
 
 \section{Background}
+
+\subsection{Network Architecture}
+
 model beschrijven in termen van \emph{states rewards and actions} + Q-learning (is pure value iteration aka rewards propagaten van de terminal state naar de eerste zet in episodes)
+
+\subsection{Atari}
+
+The Atari environment uses a default setup for all the games available. First it has to be initialized, after that we can iterate through the screen by calling the $next$ function on the environment with an action. The network will return the next state, the reward, and whether the game is finished or not. When the game is finished, we know we have to either reset the environment, or we are done with the training or evaluation on the game.
 
 \section{Related Work}
 
@@ -112,13 +121,41 @@ Since we are playing the game on real time in the atari environment, there will 
 
 In order to mitigate this effect, we use experience replay \cite{mnih2013playing}. We let the network gather some experience, before we start training the network; we let the network play the game, and we save the current game state, the taken action, the resulting reward and the resulting game state to a list of experiences. After the network has gained enough experience, we start training the network. Training is done by uniformly taking experiences from the experience list, and calculating the necessary things to train the network. More details on this will be provided in  chapter \ref{chapter:training}.
 
+\subsection{Double DQN}
+
+abc
+
 \subsection{Training details} \label{chapter:training}
 model initializatie + parameters etc. (qua hidden layers e.d.)
 Huber loss vs. MSE
 
-The model is trained by utilizing the techniques mentioned before. 
+The model is trained by utilizing the techniques mentioned before. The network will be trained to approximate the $Q^*$ function. Using the simple loss function:
 
-\subsection{Difficulties}
+\[
+	L = \left(r + \gamma \max_{a'}( Q(\theta_i, s',a')) - Q(\theta_i, s, a)\right)^2
+\]
+
+in which $\theta_i$ are the current weights, $s'$ is the state that is obtained after performing $a$ on the state $s$, $r$ is the reward obtained by performing action $a$ on state $s$.
+
+
+\subsubsection{Training}
+Start the training by initializing the necessary things: initialize the weights of the network, initialize the experience list, initialize the Atari environment and set the current screen to be all zeros. After that, we can start training the network. 
+
+Then we loop for some number of entire games over the entire next phase of the training. We use the network to decide the actions taken in the game. If a game is finished, we simply reset the environment and continue training, we also have to reinitialize the current game state. Every time an action is taken, we collect the current state, the action, the reward, and the next state and store these in the experience list. After we have gathered sufficient experience, we start training on this experience. This is done by sampling random experiences from the list, and using the values from the experience to calculate the loss, and do backpropagation with this loss, to estimate how we have to update the network. 
+
+
+
+
+
+% is it useful to make some pseudocode
+%\begin{algorithm}
+%	\caption{My algorithm}\label{euclid}
+%	\begin{algorithmic}
+%\STATE f
+%\end{algorithmic}
+%\end{algorithm}
+%
+
 
 
 
@@ -131,7 +168,8 @@ We can conclude that implement
 
 \section{Discussion}
 Complexer dan we dachten + link naar PNN
-
+\subsection{Difficulties}
+\subsection{PNN/ future work}
 \cite{*}
 \bibliography{bibliography}
 \bibliographystyle{plainnat}
