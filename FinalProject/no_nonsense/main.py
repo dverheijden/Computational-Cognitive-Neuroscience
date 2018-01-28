@@ -18,20 +18,12 @@ import math
 from copy import deepcopy
 import chainer.computational_graph as c
 import os
-from wrappes import FrameStackWrapper, ResetLifeLostWrapper
+from wrappers import FrameStackWrapper, ResetLifeLostWrapper
 
 
-def summary(rewards, loss):
-    if not os.path.exists("results/{}".format(args.env)):
-        os.makedirs("results/{}".format(args.env))
-
-    with open("results/{}/{}_reward.csv".format(args.env, time.strftime("%Y-%m-%d-%H:%M")), 'w') as r_file:
-        for r in rewards:
-            r_file.write("{}\n".format(r))
-
-    with open("results/{}/{}_loss.csv".format(args.env, time.strftime("%Y-%m-%d-%H:%M")), 'w') as l_file:
-        for l in loss:
-            l_file.write("{}\n".format(l))
+def summary(prefix):
+    rewards = np.genfromtxt(prefix + "rewards.csv")
+    loss = np.genfromtxt(prefix + "loss.csv")
 
     avgs = [0]
     for n in range(len(rewards)):
@@ -78,7 +70,6 @@ def process_data(data):
     cur_states = np.squeeze(cur_states, axis=0)
     cur_states = chainer.cuda.to_gpu(cur_states) if chainer.cuda.available else cur_states
     cur_qs = net(cur_states)
-    cur_qs.name = "current Q-Values"
 
     next_states = np.stack(data[:, 1], axis=1)
     next_states = np.squeeze(next_states, axis=0)
@@ -126,30 +117,37 @@ def preprocess_obs(obs, dim=3):
         obs = obs.astype(np.float32)
         return np.expand_dims(obs, axis=0)
 
-    obs = rgb2gray(obs)
-    obs = obs.astype(np.float32)
-    if args.env == "Pong-v0":
-        obs = obs[35:195]  # crop
-        obs = obs[::2, ::2]  # downsample by factor of 2
-        # obs = obs[:, :, 0]  # use only only RED
-        # obs[obs == 144] = 0  # erase background (background type 1)
-        # obs[obs == 109] = 0  # erase background (background type 2)
-        # obs[obs != 0] = 1  # everything else (paddles, ball) just set to 1
+    processed_obs = []
+    for frame in obs:
+        frame = rgb2gray(frame)
+        frame = frame.astype(np.float32)
+        if args.env == "Pong-v0":
+            frame = frame[35:195]  # crop
+            frame = frame[::2, ::2]  # downsample by factor of 2
+            # obs = obs[:, :, 0]  # use only only RED
+            # obs[obs == 144] = 0  # erase background (background type 1)
+            # obs[obs == 109] = 0  # erase background (background type 2)
+            # obs[obs != 0] = 1  # everything else (paddles, ball) just set to 1
 
-    elif args.env == "Breakout-v0":
-        obs = obs[35:195, 8:152]  # crop
-        obs = obs[::2, ::2]  # downsample by factor of 2
+        elif args.env == "Breakout-v0":
+            frame = frame[35:195, 8:152]  # crop
+            frame = frame[::2, ::2]  # downsample by factor of 2
 
-    elif args.env == "SpaceInvaders-v0":
-        obs = obs[:195, :]  # crop
+        elif args.env == "SpaceInvaders-v0":
+            frame = frame[:195, :]  # crop
 
-    if dim == 2:  # For MLP input
-        obs = obs.ravel()
-    elif dim == 3:  # For Conv input
-        obs = np.expand_dims(obs, axis=0)
+        if dim == 2:  # For MLP input
+            frame = frame.ravel()
 
-    obs = np.expand_dims(obs, axis=0)
-    return obs
+        # elif dim == 3:  # For Conv input
+        #     frame = np.expand_dims(frame, axis=0)
+
+        processed_obs.append(frame)
+
+    processed_obs = np.array(processed_obs)
+    processed_obs = np.expand_dims(processed_obs, axis=0)
+
+    return processed_obs
 
 
 def discount_reward(memory, cur_reward):
@@ -198,89 +196,79 @@ def train():
 
     global total_moves
 
-    rewards = []
-    losses = []
-    tqdm.write(" {:^5} | {:^10} | {:^5} | {:^10} | {:^10} | {:^12} | {:^10} | {:^15}\n".format(
-        "Game", "Epsilon", "Score", "Total Avg", "Score@10", "Total Moves", "Loss", "Avg Loss")
-               + "-"*100)
+    prefix = "results/{}/{}_".format(args.env, time.strftime("%Y-%m-%d-%H:%M"))
+    rewards_file = open(prefix + "rewards.csv", 'w')
+    losses_file = open(prefix + "loss.csv", 'w')
+
+    tqdm.write(" {:^5} | {:^10} | {:^5} | {:^10} | {:^12} | {:^10}\n".format(
+        "Game", "Epsilon", "Score", "Score@100", "Total Moves", "Loss")
+               + "-"*70)
     with open("{}.progress".format(args.env), 'w') as f:
 
         replay_memory = []
         loss_list = []
+        rewards_list = []
+        running_reward = 0  # games may span multiple episodes
 
         obs_dimension = 3 if not args.toy else 2
 
         for game_nr in tqdm(range(1, args.n_epoch+1), unit="game", ascii=True, file=f):
-            prev_obs = None
             cur_obs = preprocess_obs(env.reset(), dim=obs_dimension)
-
-            running_reward = 0
 
             moves = 0
 
             while True:
                 moves += 1  # Bookkeeping
-                total_moves += 1  # epsilon_decay
+                total_moves += 1 if eps_threshold > epsilon_min else 0  # epsilon_decay
 
                 if not args.headless:
                     env.render()
 
-                if not args.env == "CartPole-v0":
-                    state = np.subtract(cur_obs, prev_obs) if prev_obs is not None else np.zeros(cur_obs.shape, dtype=np.float32)
-                else:
-                    state = cur_obs
+                _ , taken_action, _ = compute_action(cur_obs, deterministic=False)
 
-                prev_obs = cur_obs
-
-                _ , taken_action, _ = compute_action(state, deterministic=False)
-
-                cur_obs, reward, done, info = env.step(taken_action)
-                cur_obs = preprocess_obs(cur_obs, dim=obs_dimension)
-
+                next_obs, reward, done, info = env.step(taken_action)
+                next_obs = preprocess_obs(next_obs, dim=obs_dimension)
                 if reward != 0:
                     reward = -1 if reward < 0 else 1
-
-                if args.env != "CartPole-v0":
-                    state_future = np.subtract(cur_obs, prev_obs)
-                else:
-                    state_future = cur_obs
 
                 running_reward += reward
 
                 # Simple DQN approach - Pin it on Value Iteration / Reward Propagation
                 if len(replay_memory) is args.replay_size:
-                    replay_memory[randint(0, len(replay_memory)-1)] = [state, state_future, taken_action, done, reward]
+                    replay_memory[randint(0, len(replay_memory) - 1)] = [cur_obs, next_obs, taken_action, done,
+                                                                         reward]
                 else:
-                    replay_memory.append([state, state_future, taken_action, done, reward])
+                    replay_memory.append([cur_obs, next_obs, taken_action, done, reward])
 
                 # Update after every args.update_threshold frames
                 if moves % args.update_threshold is 0 and len(replay_memory) > args.replay_size_min:
                     train_data = [replay_memory[randint(0, len(replay_memory) - 1)] for _ in range(args.batch_size)]
                     loss = process_data(train_data)
                     loss_list.append(loss)
-                    losses.append(loss)
+                    losses_file.write("{}\n".format(loss))
 
-                if done:
-                    rewards.append(running_reward)
-                    game_loss = float('NaN')
-                    avg_loss = float('NaN')
+                if info['done']:  # Running out of lives means the game is done
+                    rewards_file.write("{}\n".format(running_reward))
+                    if len(rewards_list) is 100:
+                        del rewards_list[0]  # Only store last 100 rewards
+                    rewards_list.append(running_reward)
 
                     if game_nr % args.plot_every is 0:
-                        # Update after X frames Method
+                        game_loss = float('NaN')
+                        avg_reward = sum(rewards_list)/len(rewards_list)
+
                         if len(loss_list) > 0:
                             game_loss = sum(loss_list) / len(loss_list)
-                            avg_loss = sum(losses) / len(losses)
                             loss_list.clear()
 
-                        tqdm.write(" {:5d} | {:10.8f} | {:+5.0f} | {:10.5f} | {:10.5f} | {:12d} | {:^10f} | {:^15f}".format(
-                            game_nr, eps_threshold, running_reward, sum(rewards)/len(rewards),
-                            sum(rewards[-10:])/len(rewards[-10:]),
-                            moves, game_loss, avg_loss
+                        tqdm.write(" {:5d} | {:10.8f} | {:+5.0f} | {:10.5f} | {:12d} | {:^10f}".format(
+                            game_nr, eps_threshold, running_reward, avg_reward, moves, game_loss
                             )
                         )
+                    running_reward = 0
                     break
 
-    summary(rewards, losses)
+    summary(prefix)
 
 
 if __name__ == "__main__":
@@ -290,34 +278,36 @@ if __name__ == "__main__":
     parser.add_argument("--output", dest="outfile",
                         help="Path to output model")
     parser.add_argument("--env", dest="env",
-                        help="Environment Name", default="SpaceInvaders-v0")
+                        help="Environment Name", default="Pong-v0")
     parser.add_argument("--hidden", dest="n_hidden", type=int, default=256,
                         help="Amount of hidden units")
     parser.add_argument("--feature-maps", dest="n_feature_maps", type=int, default=12,
                         help="Amount of feature maps")
     parser.add_argument("--epochs", dest="n_epoch", type=int, default=2000,
                         help="Amount of epochs")
-    parser.add_argument("--replay-size", dest="replay_size", type=int, default=100000,
+    parser.add_argument("--replay-size", dest="replay_size", type=int, default=1000000,
                         help="Size of replay buffer")
     parser.add_argument("--replay-size-initial", dest="replay_size_min", type=int, default=2000,
                         help="Size of replay buffer")
-    parser.add_argument("--batch-size", dest="batch_size", type=int, default=128,
-                        help="Size of Batch Size")
+    parser.add_argument("--batch-size", dest="batch_size", type=int, default=32,
+                        help="Size of one training batch")
     parser.add_argument("--frames", dest="frames", type=int, default=4,
                         help="Number of stacked frames per observation")
-    parser.add_argument("--alpha", dest="alpha", type=float, default=1e-5,
+    parser.add_argument("--alpha", dest="alpha", type=float, default=2.5e-4,
                         help="Learning Rate")
+    parser.add_argument("--momentum", dest="momentum", type=float, default=0.95,
+                        help="Momentum")
     parser.add_argument("--epsilon-min", dest="epsilon_min", type=float, default=0.05,
                         help="Minimum probability of doing a random action")
-    parser.add_argument("--epsilon-max", dest="epsilon_max", type=float, default=0.8,
+    parser.add_argument("--epsilon-max", dest="epsilon_max", type=float, default=1,
                         help="Maximum probability of doing a random action")
-    parser.add_argument("--epsilon-decay", dest="epsilon_decay", type=float, default=24000,
+    parser.add_argument("--epsilon-decay", dest="epsilon_decay", type=float, default=50000,
                         help="Measure at which epsilon decays (very game dependent!)")
     parser.add_argument("--gamma", dest="gamma", type=float, default=0.99,
                         help="Discount factor")
     parser.add_argument("--decay-rate", dest="decay_rate", type=float, default=0.99,
                         help="Decay rate for future rewards")
-    parser.add_argument("--update-after", dest="update_threshold", type=int, default=50,
+    parser.add_argument("--update-after", dest="update_threshold", type=int, default=4,
                         help="Number of frames needed to update")
     parser.add_argument("--plot-every", dest="plot_every", type=int, default=1,
                         help="Number of games before showing summary")
@@ -345,12 +335,15 @@ if __name__ == "__main__":
 
     total_moves = 0
 
-    net = CNN(n_actions=env.action_space.n) if not args.toy \
-        else FCN(conv_channels=args.frames, n_actions=env.action_space.n)
+    net = CNN(conv_channels=args.frames, n_actions=env.action_space.n) if not args.toy \
+        else FCN(n_actions=env.action_space.n)
     if chainer.cuda.available:
         net.to_gpu()
-    optim = optimizers.RMSprop(lr=args.alpha)
+    optim = optimizers.RMSpropGraves(lr=args.alpha, momentum=args.momentum)
     optim.setup(net)
+
+    if not os.path.exists("results/{}".format(args.env)):
+        os.makedirs("results/{}".format(args.env))
 
     train()
 
