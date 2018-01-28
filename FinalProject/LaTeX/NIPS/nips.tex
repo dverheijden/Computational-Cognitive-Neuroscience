@@ -70,17 +70,14 @@
 \maketitle
 
 \begin{abstract}
-  Abstract goes here
+  We show that it is possible to implement a deep Q-network in Chainer. We use different techniques to train the network efficiently. We manage to achieve super human performance in a number of games.
 \end{abstract}
 
 \section{Introduction}
-Vertellen over atari, recent advances. Feel krijgen over hoe complex door zelf implementeren w/e.
 
-The Atari Gym \cite{1606.01540} environment is a modern environment to train and test various reinforcement learning algorithms, on a difficult, real time, task. The gym has a large variety of different games that we can test our algorithms on. We wanted to implement and train a novel neural network in Chainer \cite{chainer_learningsys2015}. We tried implementing a Progressive Neural Network, as proposed by \cite{rusu2016progressive}. 
+The Atari Gym \cite{1606.01540} environment is a modern environment to train and test various reinforcement learning algorithms, on a difficult, real time, task. The gym has a large variety of different games that we can test our algorithms on. We wanted to implement and train a novel neural network in Chainer \cite{chainer_learningsys2015}. We implemented the deep Q-learning network as introduced by \cite{mnih2013playing} and \cite{mnih2015human}.
 
-Unfortunately, we encountered some difficulties when implementing the network in Chainer. In this document we will give an outline of what went wrong, and what went right, so researcher know what problems they should avoid when using Chainer % using chainer is the problem
-
-After we did that, we decided to implement deep Q-learning \cite{mnih2015human}. We tried to reproduce the results of the paper, albeit with a smaller scope (i.e. one game instead of 49). In this paper we will explain what we had to do to reproduce the training of the deep Q-network. 
+In this paper we will give an overview of the various techniques that are needed when training a deep Q-network. We will also give a short introduction to the problem of reinforcement learning.
 
 \section{Background}
 
@@ -94,11 +91,25 @@ On a lower level, the atari environment works as follows: it uses a default setu
 
 \subsection{Reinforcement Learning}
 
-The main problems 
+As stated before, the Atari environment provides a specific learning environment. The agent receives positive or negative rewards and has to change its actions based on these rewards. This structure is called reinforcement learning. Reinforcement learning differs from both supervised and unsupervised learning in a number of ways. It differs from supervised learning because we don't have a training set of labeled data, we only gain the `labels' after performing the action. Different actions result in different rewards.
 
-\subsection{Q - learning}
+It differs from unsupervised learning too, the network does receive information about whether the performed action was good or bad. So we are not simply learning the general structure of an Atari game, as is common in unsupervised methods.
 
+This poses a number of different challenges. For example, the distance between an action and the reward. Also, the agent will see different parts of the game, based on the actions that it takes. This has as a consequence that there is a balance between exploration and exploitation, if the agent always chooses the same action that has an immediate reward, the agent might get stuck in the game. But if it acts too randomly it might not learn to get past a difficult part of the game, in which it has to take a dangerous action first \cite{reinforcementLearningDraft}.
 
+\subsection{Q-learning}
+
+One of the ways to deal with the difficulties is Q-learning. Q-learning was popularized in the famous paper from Google Deepmind \cite{chainer_learningsys2015}. The assumption of Q-learning is that there is some function called $Q(s, a)$ that can predict the value of doing action $a$ when the agent is in state $s$. If we assume that we have this function available, we can utilize it by evaluating it at every state and choosing the action with the highest value. This will then result in perfect play. The problem is, of course, that we don't know this $Q$-function. 
+
+One approach to approximate the $Q$ function is the so called tabular Q learning. The main idea is to use the Bellman equation: 
+
+\[
+	Q(s,a) = r + \gamma \max_{a'} (Q(s',a')),
+\]
+
+here $s$ is the current state, $a$ is the chosen action, $r$ and $s'$ are the result and the next state resulting from action $a$. In tabular Q-learning, $Q$ is approximated by a table of size $S \times A$, where $S$ is the size of the state-space and $A$ is the size of the action space. Unfortunately, the state-space is really big in just the simple Atari games, so this method is not feasible for anything but the smallest problems.
+
+To tackle this specific problem, we replace the table with a large neural network, which will be trained to estimate the $Q$ function for every state. There are numerous challenges when training a deep Q-network. In this paper we will discuss a few of the problems that have to be considered.
 
 \subsection{Network Architecture}
 
@@ -118,7 +129,13 @@ Reinforcement learning is a very active field, so there is a lot of related work
 
 More recently, Google achieved another major success when they managed to beat the worlds best Go players, using a version of reinforcement learning
 
+Another problem of Neural Networks is the so called Catastrophic Forgetting which means that if we take a network, and train it on problem 1, for example one of the games in Atari. Then we train it on a different game, problem 2, the network will `forget' how to play problem 1. 
+
+Anonther problem is that of knowlegde transfer. Some games are fairly similar, so learning one game might help you play another game. But can a neural network transfer the knowledge from one game to the next? There are a number of ways to tackle these problems. For example the work that Rusu did on Progressive Neural Networks \cite{rusu2016progressive}. In this paper they introduce a network architecture that adds a new network for every problem that it encounters, but incorporates all computations of the previous networks. The idea is that these computations speed up the learning of the next network, because some of the knowlede transfers from one game to the next. 
+
 \section{Deep Q-Learning}
+
+Because deep q-learning is computationally expensive, we have to use a lot of optimizations. There is also a lot of instability in dee Q-learning, so we use some methods to reduce the instability of learning. In this section the techniques used to tackle these problems are described.
 
 \subsection{Preprocessing}
 Hoe we data eerst verwerken voor complexiteit vermindering + wat input model is (stacked frames) zie \cite{mnih2013playing}
@@ -141,10 +158,6 @@ Since we are playing the game on real time in the atari environment, there will 
 
 In order to mitigate this effect, we use experience replay \cite{mnih2013playing}. We let the network gather some experience, before we start training the network; we let the network play the game, and we save the current game state, the taken action, the resulting reward and the resulting game state to a list of experiences. After the network has gained enough experience, we start training the network. Training is done by uniformly taking experiences from the experience list, and calculating the necessary things to train the network. More details on this will be provided in  chapter \ref{chapter:training}.
 
-\subsection{Double DQN}
-
-abc
-
 \subsection{Training details} \label{chapter:training}
 model initializatie + parameters etc. (qua hidden layers e.d.)
 Huber loss vs. MSE
@@ -156,6 +169,18 @@ The model is trained by utilizing the techniques mentioned before. The network w
 \]
 
 in which $\theta_i$ are the current weights, $s'$ is the state that is obtained after performing $a$ on the state $s$, $r$ is the reward obtained by performing action $a$ on state $s$.
+
+\subsection{Double DQN}
+
+Because the standard version of deep Q-learning uses the same $Q$ function to estimate the future reward and predict the current reward, there might arise feedback loops while training. To prevent this from happening, we can use two deep Q-networks, one is used to predict the future reward and the action, and one is used to approximate the value that the network should predict. The adaptation of the loss function looks as follows
+
+\[
+	L = \left(r + \gamma \max_{a'}( Q(\bar\theta_i, s',a')) - Q(\theta_i, s, a)\right)^2
+\]
+
+in this function $\bar{\theta_i}
+$ denotes the fact that the weights of this network are constant while training a single batch. 
+Because we assume that the network gets better along the way, we still want to periodically update both $Q$ networks. This is the only change when utilizing the double DQN approach.
 
 
 \subsubsection{Training}
@@ -188,6 +213,8 @@ We can conclude that implement
 
 \section{Discussion}
 Complexer dan we dachten + link naar PNN
+
+
 \subsection{Difficulties}
 \subsection{PNN/ future work}
 \cite{*}
