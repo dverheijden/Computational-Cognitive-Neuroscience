@@ -80,23 +80,43 @@ The Atari Gym \cite{1606.01540} environment is a modern environment to train and
 
 Unfortunately, we encountered some difficulties when implementing the network in Chainer. In this document we will give an outline of what went wrong, and what went right, so researcher know what problems they should avoid when using Chainer % using chainer is the problem
 
-Finally, we implemented a simpler neural network architecture. We will discuss the results that this network achieved. 
+After we did that, we decided to implement deep Q-learning \cite{mnih2015human}. We tried to reproduce the results of the paper, albeit with a smaller scope (i.e. one game instead of 49). In this paper we will explain what we had to do to reproduce the training of the deep Q-network. 
 
 \section{Background}
+
+\subsection{Atari}
+
+On a high level the Atari environment works as follows. An agent is playing a game, choosing different actions and different times. When the agent manages to score a point, or beat a level, the game will return a reward. If the agent dies, the game will return a different reward. It is easy to see how this leads to difficulties, since there might not be a direct relation between the last action and the last reward. 
+
+An example from the game Pacman. The agent has to make sure it is not trapped by the little ghosts If it is trapped, it will not immediately die, the death will only occur after some amount of time. So the immediate positive reward the agent gained by eating a dot, might lead to the agents demise.
+
+On a lower level, the atari environment works as follows: it uses a default setup for all the games available. First it has to be initialized, after that we can iterate through the screen by calling the $next$ function on the environment with an action. The network will return the next state, the reward, and whether the game is finished or not. When the game is finished, we know we have to either reset the environment, or we are done with the training or evaluation on the game.
+
+\subsection{Reinforcement Learning}
+
+The main problems 
+
+\subsection{Q - learning}
+
+
 
 \subsection{Network Architecture}
 
 model beschrijven in termen van \emph{states rewards and actions} + Q-learning (is pure value iteration aka rewards propagaten van de terminal state naar de eerste zet in episodes)
 
-\subsection{Atari}
+The network architecture that we will be using has a number of different layers. Since we are dealing with raw pixel data, we have chosen to use three % update to have the most recent
+convolutional layers. Convolutional layers are especially good at handling visual input, because they make use of the special structure of the pixel data. After these layers we have to fully connected layers. The output consists of the possible actions the agent can take. Between each of the layers we add rectifier non-linearity.
 
-The Atari environment uses a default setup for all the games available. First it has to be initialized, after that we can iterate through the screen by calling the $next$ function on the environment with an action. The network will return the next state, the reward, and whether the game is finished or not. When the game is finished, we know we have to either reset the environment, or we are done with the training or evaluation on the game.
+
+
 
 \section{Related Work}
 
 Not sure... Misschien wat vertellen over de guru paper \cite{mnih2013playing} + mogelijke verbeteringen in NATURE \cite{mnih2015human}
 
 Reinforcement learning is a very active field, so there is a lot of related work. In 2013 Mnih et al introduced a novel way to tackle the problem of reinforcement learning which they called Q-learning. This method is highly effective, achieving super human play in a number of games.
+
+More recently, Google achieved another major success when they managed to beat the worlds best Go players, using a version of reinforcement learning
 
 \section{Deep Q-Learning}
 
