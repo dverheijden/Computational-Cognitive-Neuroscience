@@ -7,14 +7,14 @@
 % to avoid loading the natbib package, add option nonatbib:
 % \usepackage[nonatbib]{nips_2017}
 
-\usepackage[final]{nips_2017}
+\usepackage[final, nonatbib]{nips_2017}
 
 % to compile a camera-ready version, add the [final] option, e.g.:
 % \usepackage[final]{nips_2017}
 
 \usepackage[utf8]{inputenc} % allow utf-8 input
 \usepackage[T1]{fontenc}    % use 8-bit T1 fonts
-\usepackage{hyperref}       % hyperlinks
+\usepackage[hidelinks]{hyperref}       % hyperlinks
 \usepackage{url}            % simple URL typesetting
 \usepackage{booktabs}       % professional-quality tables
 \usepackage{amsfonts}       % blackboard math symbols
@@ -22,8 +22,9 @@
 \usepackage{microtype}      % microtypography
 \usepackage{algorithm}
 \usepackage{algorithmic}
+\usepackage[numbers]{natbib}
 
-\title{Pitfalls Encountered When Implementing Complex Neural Networks Like Progressive Neural Networks}
+\title{DQN: Learning To Learn}
 
 % The \author macro works with any number of authors. There are two
 % commands used to separate the names and addresses of multiple
@@ -70,75 +71,83 @@
 \maketitle
 
 \begin{abstract}
-  We show that it is possible to implement a deep Q-network in Chainer. We use different techniques to train the network efficiently. We manage to achieve super human performance in a number of games.
+We show that it is possible to implement a deep Q-network in Chainer. We use different techniques to train the network efficiently. We manage to achieve super human performance in a number of games and confirm that the original DQN scores are a solid baseline for future studies.
 \end{abstract}
 
 \section{Introduction}
+Reinforcement learning is becoming a field in machine learning that is getting a lot of attention lately, with AlphaGo Zero beating the previous Go Champion, which was also an AI \cite{silver2017mastering}. The latter defeated the World Champion in Go. So currently, the best Go player in the world is an AI.
 
-The Atari Gym \cite{1606.01540} environment is a modern environment to train and test various reinforcement learning algorithms, on a difficult, real time, task. The gym has a large variety of different games that we can test our algorithms on. We wanted to implement and train a novel neural network in Chainer \cite{chainer_learningsys2015}. We implemented the deep Q-learning network as introduced by \cite{mnih2013playing} and \cite{mnih2015human}.
+One of the first algorithms that successfully played a big range of games was proposed by \citep{mnih2013playing}, called Deep Q-Learning Networks (DQN). Here the AI was given the raw pixel values as input to the model. In this model, Q-values were used as an measure for how good an action is in a specific state.
 
-In this paper we will give an overview of the various techniques that are needed when training a deep Q-network. We will also give a short introduction to the problem of reinforcement learning.
+This was made possible by Atari Gym \cite{1606.01540}, a reinforcement learning environment to train and test various reinforcement learning algorithms on difficult, real-time, tasks. The gym has a large variety of different games that are commonly used as a benchmark tool for testing models. Our goal was to implement and train a novel  reinforcment learning neural network in Chainer \cite{chainer_learningsys2015}. We chose to implemented deep Q-learning as introduced by \cite{mnih2013playing}, with extentions from \cite{mnih2015human}.
+
+The structure of this paper is as follows: We will first give a short introduction to the problem of reinforcement learning. We then proceed with giving an overview of the various techniques that are proposed to train a deep Q-network and techniques to speed up learning. We then present our results and finish with an overview of our study with resulting conclusions.
 
 \section{Background}
 
 \subsection{Atari}
 
-On a high level the Atari environment works as follows. An agent is playing a game, choosing different actions and different times. When the agent manages to score a point, or beat a level, the game will return a reward. If the agent dies, the game will return a different reward. It is easy to see how this leads to difficulties, since there might not be a direct relation between the last action and the last reward. 
+The Atari gym environment works as follows: An agent is playing a game, choosing different actions based on the current state (observation). When the agent manages to score a point, the game will return a reward. If the agent dies, the game will return a different reward. It is easy to see how this leads to difficulties, since there might not be a direct relation between the last action and the last reward. Scoring a point may be the cause of an action that happened 100 frames ago.
 
-An example from the game Pacman. The agent has to make sure it is not trapped by the little ghosts If it is trapped, it will not immediately die, the death will only occur after some amount of time. So the immediate positive reward the agent gained by eating a dot, might lead to the agents demise.
+An example may be drawn from the game of Pacman. The agent has to make sure it is not trapped by the little ghosts. If it is trapped, it will not immediately die. Death will after a longer amount of frames. To make the problem even more complex: the immediate positive reward after eating a pallet in a corridor, might lead to the agents demise.
 
-On a lower level, the atari environment works as follows: it uses a default setup for all the games available. First it has to be initialized, after that we can iterate through the screen by calling the $next$ function on the environment with an action. The network will return the next state, the reward, and whether the game is finished or not. When the game is finished, we know we have to either reset the environment, or we are done with the training or evaluation on the game.
+On a lower level, the Atari environment works as follows: it uses a default routine for all the games available. First it has to be initialized, after that we can iterate through the screen by calling the \texttt{step} function on the environment with the action that the agent wants to perform. The environment will then return the resulting state, the reward, whether the game is finished or not and some information that is game specific. When the game is finished, i.e. \textit{done} is \textit{True}, we reset the environment to start another game, or we stop and are done with the training.
 
 \subsection{Reinforcement Learning}
 
-As stated before, the Atari environment provides a specific learning environment. The agent receives positive or negative rewards and has to change its actions based on these rewards. This structure is called reinforcement learning. Reinforcement learning differs from both supervised and unsupervised learning in a number of ways. It differs from supervised learning because we don't have a training set of labeled data, we only gain the `labels' after performing the action. Different actions result in different rewards.
+As stated before, the Atari environment provides a specific learning environment. The agent receives positive or negative rewards and has to change its actions based on these rewards. This methodology is called reinforcement learning. Reinforcement learning differs from both supervised and unsupervised learning in a number of ways. It differs from supervised learning because we don't have a training set of labeled data, we only gain the `labels' after performing the action. In the context of Atari games, there is also a temporal mismatch between receiving a reward and whether the previous action is specifically the cause for gaining this reward.
 
 It differs from unsupervised learning too, the network does receive information about whether the performed action was good or bad. So we are not simply learning the general structure of an Atari game, as is common in unsupervised methods.
 
-This poses a number of different challenges. For example, the distance between an action and the reward. Also, the agent will see different parts of the game, based on the actions that it takes. This has as a consequence that there is a balance between exploration and exploitation, if the agent always chooses the same action that has an immediate reward, the agent might get stuck in the game. But if it acts too randomly it might not learn to get past a difficult part of the game, in which it has to take a dangerous action first \cite{reinforcementLearningDraft}.
+This poses a number of different challenges. For example, the distance between an action and the reward. Also, the agent will explore different states of the game, based on the actions that it takes. This has as a consequence that there is a balance between exploration and exploitation, if the agent always chooses the same action that has an immediate reward, the agent might get stuck in the game. But if it acts too randomly it might not learn to get past a difficult part of the game, in which it has to take a dangerous action first \cite{reinforcementLearningDraft}.
 
 \subsection{Q-learning}
 
-One of the ways to deal with the difficulties is Q-learning. Q-learning was popularized in the famous paper from Google Deepmind \cite{chainer_learningsys2015}. The assumption of Q-learning is that there is some function called $Q(s, a)$ that can predict the value of doing action $a$ when the agent is in state $s$. If we assume that we have this function available, we can utilize it by evaluating it at every state and choosing the action with the highest value. This will then result in perfect play. The problem is, of course, that we don't know this $Q$-function. 
+One way to deal with the mentioned difficulties is Q-learning. Q-learning was proposed by \citeauthor{watkins1992q} \cite{watkins1992}. The assumption of Q-learning is that there is some function called $Q(s, a)$ that provides the gain of doing action $a$ when the agent is in state $s$. If we assume that we have this function available, we can utilize it by evaluating it at every state and choosing the action with the highest value. This will then result in perfect play. The problem is, of course, that we don't know this $Q$-function. 
 
 One approach to approximate the $Q$ function is the so called tabular Q learning. The main idea is to use the Bellman equation: 
 
 \[
-	Q(s,a) = r + \gamma \max_{a'} (Q(s',a')),
+	Q(s_t,a_t) = (1 - \alpha) Q(s_t, a_t) + \alpha(r_t + \gamma \max_{a_{t+1}} Q(s_{t+1},a_{t+1})),
 \]
 
-here $s$ is the current state, $a$ is the chosen action, $r$ and $s'$ are the result and the next state resulting from action $a$. In tabular Q-learning, $Q$ is approximated by a table of size $S \times A$, where $S$ is the size of the state-space and $A$ is the size of the action space. Unfortunately, the state-space is really big in just the simple Atari games, so this method is not feasible for anything but the smallest problems.
+here $s_t$ is our current state, $a_t$ is the chosen action, $r_t$ and $s_{t+1}$ are respectively the reward and next state resulting from performing action $a$. In tabular Q-learning, $Q$ is approximated by a table of size $S \times A$, where $S$ is the size of the state-space and $A$ is the size of the action space. 
 
-To tackle this specific problem, we replace the table with a large neural network, which will be trained to estimate the $Q$ function for every state. There are numerous challenges when training a deep Q-network. In this paper we will discuss a few of the problems that have to be considered.
+Unfortunately, the state-space is really big in our environments, since every slight change of a single pixel value in the Atari games is seen as a different state. This problem makes tabular Q-learning not feasible for our project.
+
+To tackle this specific problem, \citeauthor{mnih2013playing} proposed a solution: replace the table with a neural network for approximation. The neural network can then be trained to estimate the $Q$ function for every state. However, instead of having a separate network for each action, we will have an output layer corresponding to every possible action that can be performed. This leads to the new updating rule:
+
+\[
+    Q(s_t,a_t) = r_t + \gamma \max_{a_{t+1}} Q(s_{t+1},a_{t+1}))
+\]
+
+
+There are numerous challenges when training a deep Q-network. In this paper we will discuss a few of the problems that have to be considered and methods to combat these problems.
 
 \subsection{Network Architecture}
+%model beschrijven in termen van \emph{states rewards and actions} + Q-learning (is pure value iteration aka rewards propagaten van de terminal state naar de eerste zet in episodes)
 
-model beschrijven in termen van \emph{states rewards and actions} + Q-learning (is pure value iteration aka rewards propagaten van de terminal state naar de eerste zet in episodes)
-
-The network architecture that we will be using has a number of different layers. Since we are dealing with raw pixel data, we have chosen to use three % update to have the most recent
-convolutional layers. Convolutional layers are especially good at handling visual input, because they make use of the special structure of the pixel data. After these layers we have to fully connected layers. The output consists of the possible actions the agent can take. Between each of the layers we add rectifier non-linearity.
-
+The network architecture that we will be using has a number of different layers. Since we are dealing with raw pixel data, we have chosen to use three convolutional layers. Convolutional layers are especially good at handling visual input, because they take advantage of the the spatial features that are hidden in the pixel data. After these layers we have two fully connected layers. The size out the final fully connected layer corresponds to the number possible actions the agent can perform. After every hidden layer we perform a rectified linear activation function.
 
 
 
 \section{Related Work}
+%Not sure... Misschien wat vertellen over de guru paper \cite{mnih2013playing} + mogelijke verbeteringen in NATURE \cite{mnih2015human}
 
-Not sure... Misschien wat vertellen over de guru paper \cite{mnih2013playing} + mogelijke verbeteringen in NATURE \cite{mnih2015human}
+Reinforcement learning is a very active field, so there is a lot of related work. In \citeyear{mnih2013playing} \citeauthor{mnih2013playing} introduced a novel way to tackle the problem of reinforcement learning which they called Deep Q-learning. This method is highly effective, achieving super human play in a number of games \cite{mnih2013learning}. In \citeyear{mnih2015human}, \citeauthor{mnih2013playing} proposed a new iteration of their DQN algorithm with several new tricks to achieve higher highscores and make the learning process more stable \cite{mnih2015human}.
 
-Reinforcement learning is a very active field, so there is a lot of related work. In 2013 Mnih et al introduced a novel way to tackle the problem of reinforcement learning which they called Q-learning. This method is highly effective, achieving super human play in a number of games.
+More recently, Google's Deepmind achieved another major success when they managed to beat the worlds best Go players, using a version of reinforcement learning and subsequently beating their own world champion with a new iteration of their AI \cite{silver2017mastering}.
 
-More recently, Google achieved another major success when they managed to beat the worlds best Go players, using a version of reinforcement learning
+Another problem of Neural Networks is the so called Catastrophic Forgetting which means that if we take a network, and train it on \textit{problem 1}, for example one of the games in Atari. And then train it on a different game, \textit{problem 2}, the network will `forget' how to play problem 1 \cite{rusu2016progressive}.
 
-Another problem of Neural Networks is the so called Catastrophic Forgetting which means that if we take a network, and train it on problem 1, for example one of the games in Atari. Then we train it on a different game, problem 2, the network will `forget' how to play problem 1. 
+Anonther problem is that of knowlegde transfer. Some games are fairly similar, so learning one game might help you play another game. But can a neural network transfer the knowledge from one game to the next? There are a number of ways to tackle these problems. For example the work that \citeauthor{rusu2016progressive} did on Progressive Neural Networks \cite{rusu2016progressive}. In this paper they introduce a network architecture that adds a new network for every problem that it encounters, but incorporates all computations of the previous networks via lateral connections to previous hidden layers of previously learned tasks. The idea is that these computations speed up the learning of the next network, because some of the knowledge transfers from one game to the next.
 
-Anonther problem is that of knowlegde transfer. Some games are fairly similar, so learning one game might help you play another game. But can a neural network transfer the knowledge from one game to the next? There are a number of ways to tackle these problems. For example the work that Rusu did on Progressive Neural Networks \cite{rusu2016progressive}. In this paper they introduce a network architecture that adds a new network for every problem that it encounters, but incorporates all computations of the previous networks. The idea is that these computations speed up the learning of the next network, because some of the knowlede transfers from one game to the next. 
 
-\section{Deep Q-Learning}
-
-Because deep q-learning is computationally expensive, we have to use a lot of optimizations. There is also a lot of instability in dee Q-learning, so we use some methods to reduce the instability of learning. In this section the techniques used to tackle these problems are described.
+\section{Methods}
+Because deep q-learning is computationally expensive, we had to use a lot of optimizations and tricks to speed up the learning process. There is also a lot of instability in learning optimal Q-values, so we use some methods to reduce the combat this instability. In this section we will describe the techniques that we used to tackle these problems.
 
 \subsection{Preprocessing}
-Hoe we data eerst verwerken voor complexiteit vermindering + wat input model is (stacked frames) zie \cite{mnih2013playing}
+%Hoe we data eerst verwerken voor complexiteit vermindering + wat input model is (stacked frames) zie \cite{mnih2013playing}
 
 Due to the complex nature of raw pixel data, it is a good idea to do a manual preprocessing steps on the data. Some of the difficulties of the raw pixel data: There are a lot of unused pixels in the game, for example the top of Pong only contains the score, so there is no useful information on this part of the screen. We can remove this from the input of the network, to reduce the complexity of the game. Another example is the fact that there is coloured data, the initial input exist of three (i.e. red, green, and blue) channels. By combining them into one input layer, we reduce the complexity even more, without throwing away necessary information.
 
