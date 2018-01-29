@@ -85,7 +85,8 @@ def process_data(data):
         # rewards = data[:, 4]
         for i in range(len(target_qs)):
             # Q(s, a) = r + gamma * max_a(Q(s',a')) if game not over else r
-            target_qs[i, data[i, 2]] = data[i, 4] + args.gamma * next_qs.data[i, :].max() if not data[i, 3] else data[i, 2]
+            target_qs[i, data[i, 2]] = data[i, 4] + args.gamma * next_qs.data[i, :].max() if not data[i, 3] \
+                else data[i, 2]
 
     target_qs = chainer.cuda.to_gpu(target_qs) if chainer.cuda.available else target_qs
     loss = F.squared_error(cur_qs, target_qs)
@@ -200,9 +201,9 @@ def train():
     rewards_file = open(prefix + "rewards.csv", 'w')
     losses_file = open(prefix + "loss.csv", 'w')
 
-    tqdm.write(" {:^5} | {:^10} | {:^5} | {:^10} | {:^12} | {:^10}\n".format(
-        "Game", "Epsilon", "Score", "Score@100", "Total Moves", "Loss")
-               + "-"*70)
+    tqdm.write(" {:^5} | {:^10} | {:^5} | {:^10} | {:^12} | {:^15} | {:^10}\n".format(
+        "Game", "Epsilon", "Score", "Score@100", "Total Moves", "Replay Size", "Loss")
+               + "-"*90)
     with open("{}.progress".format(args.env), 'w') as f:
 
         replay_memory = []
@@ -227,6 +228,7 @@ def train():
                 _ , taken_action, _ = compute_action(cur_obs, deterministic=False)
 
                 next_obs, reward, done, info = env.step(taken_action)
+                done = info['done'] if not args.toy else done  # Running out of lives means the game is done
                 next_obs = preprocess_obs(next_obs, dim=obs_dimension)
                 if reward != 0:
                     reward = -1 if reward < 0 else 1
@@ -234,11 +236,9 @@ def train():
                 running_reward += reward
 
                 # Simple DQN approach - Pin it on Value Iteration / Reward Propagation
-                if len(replay_memory) is args.replay_size:
-                    replay_memory[randint(0, len(replay_memory) - 1)] = [cur_obs, next_obs, taken_action, done,
-                                                                         reward]
-                else:
-                    replay_memory.append([cur_obs, next_obs, taken_action, done, reward])
+                while len(replay_memory) >= args.replay_size:  # Some weird bug caused the list to get larger
+                    del replay_memory[randint(0, len(replay_memory) - 1)]
+                replay_memory.append([cur_obs, next_obs, taken_action, done, reward])
 
                 # Update after every args.update_threshold frames
                 if moves % args.update_threshold is 0 and len(replay_memory) > args.replay_size_min:
@@ -246,9 +246,11 @@ def train():
                     loss = process_data(train_data)
                     loss_list.append(loss)
                     losses_file.write("{}\n".format(loss))
+                    losses_file.flush()
 
-                if info['done']:  # Running out of lives means the game is done
+                if done:
                     rewards_file.write("{}\n".format(running_reward))
+                    rewards_file.flush()
                     if len(rewards_list) is 100:
                         del rewards_list[0]  # Only store last 100 rewards
                     rewards_list.append(running_reward)
@@ -261,13 +263,14 @@ def train():
                             game_loss = sum(loss_list) / len(loss_list)
                             loss_list.clear()
 
-                        tqdm.write(" {:5d} | {:10.8f} | {:+5.0f} | {:10.5f} | {:12d} | {:^10f}".format(
-                            game_nr, eps_threshold, running_reward, avg_reward, moves, game_loss
+                        tqdm.write(" {:5d} | {:10.8f} | {:+5.0f} | {:10.5f} | {:12d} | {:15} | {:^10f}".format(
+                            game_nr, eps_threshold, running_reward, avg_reward, moves, len(replay_memory), game_loss
                             )
                         )
                     running_reward = 0
                     break
-
+    rewards_file.close()
+    losses_file.close()
     summary(prefix)
 
 
@@ -287,13 +290,13 @@ if __name__ == "__main__":
                         help="Amount of epochs")
     parser.add_argument("--replay-size", dest="replay_size", type=int, default=1000000,
                         help="Size of replay buffer")
-    parser.add_argument("--replay-size-initial", dest="replay_size_min", type=int, default=2000,
+    parser.add_argument("--replay-size-initial", dest="replay_size_min", type=int, default=1000,
                         help="Size of replay buffer")
     parser.add_argument("--batch-size", dest="batch_size", type=int, default=32,
                         help="Size of one training batch")
     parser.add_argument("--frames", dest="frames", type=int, default=4,
                         help="Number of stacked frames per observation")
-    parser.add_argument("--alpha", dest="alpha", type=float, default=2.5e-4,
+    parser.add_argument("--alpha", dest="alpha", type=float, default=1e-4,
                         help="Learning Rate")
     parser.add_argument("--momentum", dest="momentum", type=float, default=0.95,
                         help="Momentum")
@@ -301,7 +304,7 @@ if __name__ == "__main__":
                         help="Minimum probability of doing a random action")
     parser.add_argument("--epsilon-max", dest="epsilon_max", type=float, default=1,
                         help="Maximum probability of doing a random action")
-    parser.add_argument("--epsilon-decay", dest="epsilon_decay", type=float, default=50000,
+    parser.add_argument("--epsilon-decay", dest="epsilon_decay", type=float, default=20000,
                         help="Measure at which epsilon decays (very game dependent!)")
     parser.add_argument("--gamma", dest="gamma", type=float, default=0.99,
                         help="Discount factor")
@@ -339,7 +342,9 @@ if __name__ == "__main__":
         else FCN(n_actions=env.action_space.n)
     if chainer.cuda.available:
         net.to_gpu()
-    optim = optimizers.RMSpropGraves(lr=args.alpha, momentum=args.momentum)
+    # optim = optimizers.RMSpropGraves(lr=args.alpha, momentum=args.momentum)
+    # optim = optimizers.RMSprop(lr=args.alpha)
+    optim = optimizers.Adam(alpha=args.alpha)
     optim.setup(net)
 
     if not os.path.exists("results/{}".format(args.env)):
