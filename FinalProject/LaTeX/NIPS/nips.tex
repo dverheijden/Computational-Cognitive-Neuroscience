@@ -44,27 +44,6 @@
   \And
   Joost Besseling\\
   s4796799
-  %% examples of more authors
-  %% \And
-  %% Coauthor \\
-  %% Affiliation \\
-  %% Address \\
-  %% \texttt{email} \\
-  %% \AND
-  %% Coauthor \\
-  %% Affiliation \\
-  %% Address \\
-  %% \texttt{email} \\
-  %% \And
-  %% Coauthor \\
-  %% Affiliation \\
-  %% Address \\
-  %% \texttt{email} \\
-  %% \And
-  %% Coauthor \\
-  %% Affiliation \\
-  %% Address \\
-  %% \texttt{email} \\
 }
 
 \begin{document}
@@ -79,19 +58,19 @@ We show that it is possible to implement a deep Q-network in Chainer. We use dif
 \section{Introduction}
 Reinforcement learning is becoming a field in machine learning that is getting a lot of attention lately, with AlphaGo Zero beating the previous Go Champion, which was also an AI \cite{silver2017mastering}. The latter defeated the World Champion in Go. So currently, the best Go player in the world is an AI.
 
-One of the first algorithms that successfully played a big range of games was proposed by \citep{mnih2013playing}, called Deep Q-Learning Networks (DQN). Here the AI was given the raw pixel values as input to the model. In this model, Q-values were used as an measure for how good an action is in a specific state.
+One of the first algorithms that successfully played a big range of games was proposed by \citep{mnih2013playing}, called Deep Q-Learning Networks (DQN). In this method, the AI is given the raw pixel values of the game as input to the model. The network then returned Q-values, which are used as a measure for how good each possible action is in a specific state. 
 
-This was made possible by Atari Gym \cite{1606.01540}, a reinforcement learning environment to train and test various reinforcement learning algorithms on difficult, real-time, tasks. The gym has a large variety of different games that are commonly used as a benchmark tool for testing models. Our goal was to implement and train a novel  reinforcment learning neural network in Chainer \cite{chainer_learningsys2015}. We chose to implemented deep Q-learning as introduced by \cite{mnih2013playing}, with extentions from \cite{mnih2015human}.
+The continued interest in reinforcement learning, was further boosted by the Atari Gym \cite{1606.01540}, a reinforcement learning environment to train and test various reinforcement learning algorithms on difficult, real-time, tasks. The gym has a large variety of different games that are commonly used as a benchmark tool for testing purposes. Our goal was to implement and train a novel reinforcement learning neural network in Chainer \cite{chainer_learningsys2015} to see if the results where reproducible. We chose to implemented deep Q-learning as introduced by \cite{mnih2013playing}, with extensions from \cite{mnih2015human}.
 
-The structure of this paper is as follows: We will first give a short introduction to the problem of reinforcement learning. We then proceed with giving an overview of the various techniques that are proposed to train a deep Q-network and techniques to speed up learning. We then present our results and finish with an overview of our study with resulting conclusions.
+The structure of this paper is as follows: first we give a short introduction to the problem of reinforcement learning. We then proceed with giving an overview of the various techniques that are proposed to train a deep Q-network and to speed up learning. We then present our results and finish with an overview of our study with resulting conclusions.
 
 \section{Background}
 
 \subsection{Atari}
 
-The Atari gym environment works as follows: An agent is playing a game, choosing different actions based on the current state (observation). When the agent manages to score a point, the game will return a reward. If the agent dies, the game will return a different reward. It is easy to see how this leads to difficulties, since there might not be a direct relation between the last action and the last reward. Scoring a point may be the cause of an action that happened 100 frames ago.
+The Atari gym environment works as follows: An agent is playing a game, choosing different actions based on the current state (observation). When the agent manages to score a point, the game will return a positive reward. If the agent dies, the game will return a different, negative reward. It is easy to see how this leads to difficulties, since there might not be a direct relation between the last action and the last reward. Scoring a point may be the cause of an action that happened 100 frames ago.
 
-An example may be drawn from the game of Pacman. The agent has to make sure it is not trapped by the little ghosts. If it is trapped, it will not immediately die. Death will after a longer amount of frames. To make the problem even more complex: the immediate positive reward after eating a pallet in a corridor, might lead to the agents demise.
+An example may be drawn from the game of Pacman. The agent has to make sure it is not trapped by the little ghosts. If it is trapped, it will not immediately die. Death will come after a longer amount of frames. To make the problem even more complex: the immediate positive reward after eating a pallet in a corridor, might lead to the agents demise.
 
 On a lower level, the Atari environment works as follows: it uses a default routine for all the games available. First it has to be initialized, after that we can iterate through the screen by calling the \texttt{step} function on the environment with the action that the agent wants to perform. The environment will then return the resulting state, the reward, whether the game is finished or not and some information that is game specific. When the game is finished, i.e. \textit{done} is \textit{True}, we reset the environment to start another game, or we stop and are done with the training.
 
@@ -117,7 +96,8 @@ here $s_t$ is our current state, $a_t$ is the chosen action, $r_t$ and $s_{t+1}$
 
 Unfortunately, the state-space is really big in our environments, since every slight change of a single pixel value in the Atari games is seen as a different state. This problem makes tabular Q-learning not feasible for our project.
 
-To tackle this specific problem, \citeauthor{mnih2013playing} proposed a solution: replace the table with a neural network for approximation. The neural network can then be trained to estimate the $Q$ function for every state. However, instead of having a separate network for each action, we will have an output layer corresponding to every possible action that can be performed. This leads to the new updating rule:
+To tackle this specific problem, \citeauthor{mnih2013playing} proposed a solution: replace the table with a neural network for approximation. The neural network can then be trained to estimate the $Q$ function for every state. 
+An early optimization of this problem is to let the network predict the $Q$-value for all of the possible actions, instead of predicting the value of a given action. This means that the network will only get the state as input, and not the state and the action. So we don't have to run the entire network multiple times, to get a score for each action. It also makes sense that this works; there is a high correlation between the possible rewards in a given state. This leads to the following updating rule
 
 \[
     Q(s_t,a_t) = r_t + \gamma \max_{a_{t+1}} Q(s_{t+1},a_{t+1}))
@@ -129,7 +109,7 @@ There are numerous challenges when training a deep Q-network. In this paper we w
 \subsection{Network Architecture}
 %model beschrijven in termen van \emph{states rewards and actions} + Q-learning (is pure value iteration aka rewards propagaten van de terminal state naar de eerste zet in episodes)
 
-The network architecture that we will be using has a number of different layers. Since we are dealing with raw pixel data, we have chosen to use three convolutional layers. Convolutional layers are especially good at handling visual input, because they take advantage of the the spatial features that are hidden in the pixel data. After these layers we have two fully connected layers. The size out the final fully connected layer corresponds to the number possible actions the agent can perform. After every hidden layer we perform a rectified linear activation function.
+The network architecture that we will be using has a number of different layers. Since we are dealing with raw pixel data, we have chosen to use three convolutional layers. Convolutional layers are especially good at handling visual input, because they take advantage of the the spatial features that are hidden in the pixel data. After these layers we have two fully connected layers. The size out the final fully connected layer corresponds to the number of possible actions the agent can perform. After every hidden layer we perform a rectified linear activation function.
 
 
 
@@ -138,22 +118,22 @@ The network architecture that we will be using has a number of different layers.
 
 Reinforcement learning is a very active field, so there is a lot of related work. In \citeyear{mnih2013playing} \citeauthor{mnih2013playing} introduced a novel way to tackle the problem of reinforcement learning which they called Deep Q-learning. This method is highly effective, achieving super human play in a number of games \cite{mnih2013playing}. In \citeyear{mnih2015human}, \citeauthor{mnih2013playing} proposed a new iteration of their DQN algorithm with several new tricks to achieve higher highscores and make the learning process more stable \cite{mnih2015human}.
 
-More recently, Google's Deepmind achieved another major success when they managed to beat the worlds best Go players, using a version of reinforcement learning and subsequently beating their own world champion with a new iteration of their AI \cite{silver2017mastering}.
+More recently, Google's Deepmind achieved another major success in reinforcement learning. when they managed to beat one of the worlds best Go players, a feat long thought of as impossible due to the complexity of the game. After that they managed to beat their own AI easily, with a new version that was entirely self-trained. Decisively showing that the game of Go is now also beat by computers. They also trained the newest version of their AI on different games and managed to obtain similar successes.
 
-Another problem of Neural Networks is the so called Catastrophic Forgetting which means that if we take a network, and train it on \textit{problem 1}, for example one of the games in Atari. And then train it on a different game, \textit{problem 2}, the network will `forget' how to play problem 1 \cite{rusu2016progressive}.
+A problem of Neural Networks is the so called Catastrophic Forgetting which means that if we take a network, and train it on \textit{problem 1}, for example one of the games in Atari. And then train it on a different game, \textit{problem 2}, the network will `forget' how to play problem 1 \cite{rusu2016progressive}.
 
-Anonther problem is that of knowlegde transfer. Some games are fairly similar, so learning one game might help you play another game. But can a neural network transfer the knowledge from one game to the next? There are a number of ways to tackle these problems. For example the work that \citeauthor{rusu2016progressive} did on Progressive Neural Networks \cite{rusu2016progressive}. In this paper they introduce a network architecture that adds a new network for every problem that it encounters, but incorporates all computations of the previous networks via lateral connections to previous hidden layers of previously learned tasks. The idea is that these computations speed up the learning of the next network, because some of the knowledge transfers from one game to the next.
+Anonther problem is that of knowlegde transfer. Some games are fairly similar, so learning one game might help you play another game. But can a neural network transfer the knowledge from one game to the next? There are a number of ways to tackle these problems. For example the work that \citeauthor{rusu2016progressive} did on Progressive Neural Networks \cite{rusu2016progressive}. In this paper they introduce a network architecture that adds a new network for every problem that it encounters, but incorporates all computations of the previous networks via lateral connections to previous hidden layers of previously learned tasks. The idea is that these computations speed up the learning of the next network, because some of the knowledge transfers from one game to the next. 
 
 
 \section{Methods}
-Because deep q-learning is computationally expensive, we had to use a lot of optimizations and tricks to speed up the learning process. There is also a lot of instability in learning optimal Q-values, so we use some methods to reduce the combat this instability. In this section we will describe the techniques that we used to tackle these problems.
+Because deep q-learning is computationally expensive, we had to use a lot of optimizations and tricks to speed up the learning process. There is also a lot of instability in learning optimal Q-values, so we use some methods to reduce this instability. In this section we will describe the techniques that we used to tackle these problems.
 
 \subsection{Preprocessing}
 %Hoe we data eerst verwerken voor complexiteit vermindering + wat input model is (stacked frames) zie \cite{mnih2013playing}
 
-Due to the complex nature of raw pixel data, it is a good idea to do a manual preprocessing steps on the data. Some of the difficulties of the raw pixel data: There are a lot of unused pixels in the game, for example the top of Pong only contains the score, this isn't useful information for playing the game. We can remove this from the input of the network, to reduce the dimensionality of the data. Another dimension is the information about color, every pixel in the input exist of three channels (i.e. red, green, and blue). By combining them into one input layer, we reduce the complexity even more, without throwing away necessary information. We do this by converting the 3-dimension color information to a 1-d representation containing shades of gray. The final preprocessing step is that we can downsample the screen. Most information is too detailed and can be ignored. The result of our preprocessing may be observed in figure \ref{fig:preprocess}. 
+Due to the complex nature of raw pixel data, it is a good idea to do a manual preprocessing steps on the data. Some of the difficulties of the raw pixel data: There are a lot of unused pixels in the game, for example the top of Pong only contains the score, this isn't useful information for playing the game. We can remove this from the input of the network, to reduce the dimensionality of the data. Another dimension is the information about color, every pixel in the input exist of three channels (i.e. red, green, and blue). By combining them into one input layer, we reduce the complexity even more, without throwing away necessary information. We do this by converting the 3-dimension color information to a 1-d representation containing shades of gray. The final preprocessing step is that we downsample the screen, that means that we divide the screen in to blocks of $2\times2$ pixels and only pick one of those pixels.. Most information is too detailed and can be ignored. The result of our preprocessing may be observed in figure \ref{fig:preprocess}. 
 
-Another problem with Atari games is that one screen doesn't provide enough information to be able to infer the state of the game (e.g. what direction is the ball moving toward? What direction is the opponent going? Or in pacman, what directions are the ghosts moving in?). In order to mitigate this effect, first we used the difference between the previous screen and the next screen. But since this doesn't provide that much extra information, we decided to use another technique in which we stack the last $n$ frames \cite{mnih2013playing}. Essentialy, we introduce 4 channels, in which each channel contains an entire screen of the game. The idea is that the combination of the last four frames contain enough information to be able to accurately predict the state of the game.
+Another problem with Atari games is that one screen doesn't provide enough information to be able to infer the precise state of the game (e.g. what direction is the ball moving toward? What direction is the opponent going? Or in pacman, what directions are the ghosts moving in?). In order to mitigate this effect, first we used the difference between the previous screen and the next screen. But since this doesn't provide that much extra information, we decided to use another technique in which we stack the last $n$ frames \cite{mnih2013playing}. Essentialy, we introduce 4 channels,  each channel contains an entire screen of the game. The idea is that the combination of the last four frames contain enough information to be able to accurately predict the state of the game.
 
 \begin{figure}
 \centering
@@ -179,18 +159,19 @@ Different environments in the Atari gym have different reward structures, which 
 
 \subsection{Replay Memory}
 %Om patronen te voorkomen \cite{mnih2013playing}
-Since we are playing the game in real time in the Atari environment, there will be a high correlation between successive game-states. Which might lead the algorithm to get stuck in a negative feedback loop. Consider the scenario in which moving to the right in the beginning of the game gives an immediate positive reward, but makes the player get stuck in some local maxima.
+Since we are playing the game in real time in the Atari environment, there will be a high correlation between successive game-states. Which might lead the algorithm to get stuck in a negative feedback loop. Consider the scenario in which moving to the right in the beginning of the game gives an immediate positive reward, but makes the player get stuck in a local maximum.
 
-In order to mitigate this effect, we use experience replay \cite{mnih2013playing}. We let the network gather some experience, before we start training the network; we let the network play the game, and we store the current game state, the taken action, the resulting reward and the resulting game state and whether it was a final state to a list of experiences. After the network has gained enough experience, we start training the network. Training is done by uniformly sampling a experiences from the experience list which form our mini-batch. More details on training will be provided in chapter \ref{chapter:training}.
+In order to mitigate this effect, we use experience replay \cite{mnih2013playing}. We let the network gather some experience, before we start training the network. We let the network play the game, and we store the current game state, the taken action, the resulting reward and the resulting game state and whether it was a final state to a list of experiences. After the network has gained enough experience, we start training the network. Training is done by uniformly sampling experiences from the experience list, the samples form our mini-batch. More details on training will be provided in chapter \ref{chapter:training}.
 
-\subsection{Training details} \label{chapter:training}
+\subsection{Calculating the Loss} \label{chapter:training}
 %model initializatie + parameters etc. (qua hidden layers e.d.)
 %Huber loss vs. MSE
+% hooe wordt alles gecombineerd
 
 The model is trained by utilizing the techniques mentioned before. The network will be trained to approximate the $Q^*$ function. Using the mean square error loss function:
 
 \[
-	L = \left(r + \gamma \max_{a'}( Q(\theta_i, s',a')) - Q(\theta_i, s, a)\right)^2
+	L = \left[\left(r + \gamma \max_{a'}( Q(\theta_i, s',a'))\right) - Q(\theta_i, s, a)\right]^2
 \]
 
 in which $\theta_i$ are the current weights, $s'$ is the state that is obtained after performing $a$ on the state $s$, $r$ is the reward obtained by performing action $a$ on state $s$.
@@ -200,7 +181,7 @@ in which $\theta_i$ are the current weights, $s'$ is the state that is obtained 
 Because the standard version of deep Q-learning uses the same $Q$ function to estimate the future reward and predict the current reward, there might arise feedback loops while training. To prevent this from happening, we can use two deep Q-networks called Double DQN \cite{van2016deep}. One network is used to predict the future reward and the action, and one is used to approximate the value that the network should predict. The adaptation of the loss function looks as follows
 
 \[
-	L = \left(r + \gamma \max_{a'}( Q(\bar\theta_i, s',a')) - Q(\theta_i, s, a)\right)^2
+	L = \left[\left(r + \gamma \max_{a'}( Q(\bar\theta_i, s',a'))\right) - Q(\theta_i, s, a)\right]^2
 \]
 
 in this function $\bar{\theta_i}
@@ -209,6 +190,7 @@ We then synchronize model $\theta$ with $\bar\theta$ after a set number of frame
 
 
 \subsubsection{Training}
+
 Start the training by initializing the necessary things: initialize the weights of the network, initialize the experience list, initialize the Atari environment and set the current screen to be all zeros. After that, we can start training the network. 
 
 Then we loop for some number of entire games over the entire next phase of the training. We use the network to decide the actions taken in the game. If a game is finished, we simply reset the environment and continue training, we also have to reinitialize the current game state. Every time an action is taken, we collect the current state, the action, the reward, and the next state and store these in the experience list. After we have gathered sufficient experience, we start training on this experience. This is done by sampling random experiences from the list, and using the values from the experience to calculate the loss, and do backpropagation with this loss, to estimate how we have to update the network. 
@@ -253,7 +235,7 @@ In this section we will go over our results for CartPole and Pong. We will first
 \subsection{CartPole}
 As a proof of concept we first tried to solve CartPole (env CartPole-v0), since this is the easiest environment to train on. In CartPole (figure \ref{fig:cartpole}) you control a cart. On top of this cart, there is a pole. The objective of this game is to balance the pole on the cart by moving the cart left or right. CartPole is considered `solved' when the average reward is greater than or equal to 195.0 over 100 consecutive trials.
 
-The results of our algorithm may found in figure \ref{fig:cartpole_results}. What we can observe from these results is that the environment has a somewhat exponential learning curve until the ceiling has been reached (a score of 200). The algorithm fairly quickly learned what it should do. What we can observe from this result is that it seems that the agent was probably stuck in a local maxima at around 50 and 80 games. It probably tried to explore different options since the total reward drops. It took roughly 200 games to be good at the game. And after roughly 500 games, we solved CartPole by satisfying the win-condition.
+The results of our algorithm can be found in figure \ref{fig:cartpole_results}. We have plotted the average reward, and the smoothed reward. The smoothed reward is the average of the previous and the next three results. What we can observe from these results is that the environment has a somewhat exponential learning curve until the ceiling has been reached (a score of 200). The algorithm fairly quickly learned what it should do. What we can observe from this result is that it seems that the agent was probably stuck in a local maximum at around 50 and 80 games. It probably tried to explore different options since the total reward drops. It took roughly 200 games to be good at the game. And after roughly 500 games, we solved CartPole by satisfying the win-condition.
 
 \begin{figure}[H]
 \centering
@@ -263,13 +245,14 @@ The results of our algorithm may found in figure \ref{fig:cartpole_results}. Wha
 \end{figure}
 
 \subsection{Pong}
-The true test of our algorithm was Pong (env Pong-v0). In pong (figure \ref{fig:pong}), there are two players, on the left the AI and on the right the Player. The player can move their paddle up and down. The objective of the game is to get the ball behind the opponent and score a point. The player that first gets 21 games, has won the game.
+The true test of our algorithm was Pong (env Pong-v0). In Pong (figure \ref{fig:pong}), there are two players, on the left the AI and on the right the Player. The player can move their paddle up and down. The objective of the game is to get the ball behind the opponent and score a point. The player that first gets 21 games, has won the game.
 
 Putting this into the context of our environment: scoring a point gives a reward of 1, losing gives a reward of -1. The game is over if a player has a score of 21. The total reward is the sum of all rewards, e.g. if the agent got a total reward of -21, he lost all games; if the player receives a total reward of 1, this means that he won 21 points and lost 20 times.
 
-In figure \ref{fig:pong_results}, we see the results for game of Pong. The first thing that may be noticed when comparing this figure to figure \ref{fig:cartpole_results}, is that (effective) learning start much later: it took some 6000 games, before the agent finally started to learn. After some 9000 games, the reward becomes exponential. Using the win-condition that you win the game (e.g. a total reward of 1) for at least 100 subsequent games, then we did not solve Pong. However, since the learning is semi-exponential, assuming it is proportional to the total reward, we have confidence that when given more time, the agent would have beaten the opponent more often.
+In figure \ref{fig:pong_results}, we see the results obtained while training on Pong. The first thing that may be noticed when comparing this figure to figure \ref{fig:cartpole_results}, is that (effective) learning start much later: it took some 6000 games, before the agent finally started to learn. After about 9000 games, the reward becomes exponential. You can observe that the average reward is still rising when the graph stops. This is due to time constraints. Extrapolating this trend, we expect that the network would continue getting better for at least a few thousand games. We are confident that the deep Q-network would  be able to consequently beat the computer opponent.
 
-Another thing that we may observe is that the smoothed rewards still have a high variance. This is due to the instability of learning. Where weight-updates are too large, such that the weights `overshoot', e.g. over- or undervalue an action. This may be an indication that the learning rate was too high.
+Another thing that we may observe is that the smoothed rewards (here we have taken the previous 100 and next 100 rewards) still have a high variance. This is due to the instability of learning. Where weight-updates are too large, such that the weights `overshoot', e.g. over- or undervalue an action. This may be an indication that the learning rate was too high.
+
 \begin{figure}[H]
 \centering
 \includegraphics[width=0.5\textwidth]{images/pong_results.eps}
