@@ -1,33 +1,34 @@
+import argparse
+import math
+import os
+import time
+from copy import deepcopy
+from random import randint
+
+import chainer
 import chainer.functions as F
 import chainer.optimizers as optimizers
-import chainer.optimizer as optimizer
-import matplotlib as mpl
-from chainer import serializers
-from chainer import Variable
-import chainer
-import numpy as np
-from gym.envs import frameskip
-from tqdm import tqdm
 import gym
+import matplotlib as mpl
+import numpy as np
+from chainer import serializers
+from tqdm import tqdm
+
 from networks import FCN, CNN
-import time
-import argparse
-from random import shuffle, randint
-from decimal import Decimal
-import math
-from copy import deepcopy
-import chainer.computational_graph as c
-import os
 from wrappers import FrameStackWrapper, ResetLifeLostWrapper
 
 
 def summary(prefix):
+    """
+    Make a quick summary plot for the loss and rewards of training and afterwards save the model
+    :param prefix: prefix where the files are stored appended with training info
+    """
     rewards = np.genfromtxt(prefix + "rewards.csv")
     loss = np.genfromtxt(prefix + "loss.csv")
 
     avgs = [0]
     for n in range(len(rewards)):
-        avg = (avgs[-1]*n + rewards[n]) / (n+1)
+        avg = (avgs[-1] * n + rewards[n]) / (n + 1)
         avgs.append(avg)
 
     plt.figure()
@@ -59,10 +60,10 @@ def summary(prefix):
 
 def process_data(data):
     """
-    Process data by computing their new Q (target) values, compute the (Huber) loss and backprop
-    We circumvent the use of a target network by pre-computing the targets
-    :param data:
-    :return:
+    Process data by computing their new Q (target) values, compute the loss and backprop
+    To stabilize the training procedure we precompute Q-Values. This somewhat circumvents
+    the use of a target network (read Double DQN).
+    :param data: mini-batch of Transitions
     """
 
     data = np.array(data)
@@ -110,13 +111,14 @@ def rgb2gray(rgb):
 
 def preprocess_obs(obs, dim=3):
     """
-    Process one observation to a 1D array
-    :param obs:
+    Process one observation to a stacked array of 1D frames
+    :param obs: stacked raw observations
+    :param dim: dimension of output array, 3D for Convolution 2D for MLP
     :return:
     """
-    if args.env == "CartPole-v0":
-        obs = obs.astype(np.float32)
-        return np.expand_dims(obs, axis=0)
+    # if args.env == "CartPole-v0":
+    #     obs = obs.astype(np.float32)
+    #     return np.expand_dims(obs, axis=0)
 
     processed_obs = []
     for frame in obs:
@@ -153,17 +155,17 @@ def preprocess_obs(obs, dim=3):
 
 def discount_reward(memory, cur_reward):
     """
-    This was used in traditional Q-learning, however in DQN this is not used. DQN relies on pure value iteration.
+    This was experimentally used, however in DQN this is not used. DQN relies on pure value iteration.
     The idea was that we discount rewards over states that had no (direct) reward. If a reward was gained, iterate over
     the previous states without reward and give them a discounted reward value.
     :param memory: game states
     :param cur_reward: gained reward
-    :return:
+    :return: discounted rewards
     """
     discounted_reward = np.zeros(len(memory))
     discounted_reward[-1] = cur_reward
     for t in reversed(range(0, len(memory) - 1)):
-        discounted_reward[t] = args.decay_rate * discounted_reward[t+1]
+        discounted_reward[t] = args.decay_rate * discounted_reward[t + 1]
 
     return discounted_reward
 
@@ -203,7 +205,7 @@ def train():
 
     tqdm.write(" {:^5} | {:^10} | {:^5} | {:^10} | {:^12} | {:^15} | {:^10}\n".format(
         "Game", "Epsilon", "Score", "Score@100", "Total Moves", "Replay Size", "Loss")
-               + "-"*90)
+               + "-" * 90)
     with open("{}.progress".format(args.env), 'w') as f:
 
         replay_memory = []
@@ -213,7 +215,7 @@ def train():
 
         obs_dimension = 3 if not args.toy else 2
 
-        for game_nr in tqdm(range(1, args.n_epoch+1), unit="game", ascii=True, file=f):
+        for game_nr in tqdm(range(1, args.n_epoch + 1), unit="game", ascii=True, file=f):
             cur_obs = preprocess_obs(env.reset(), dim=obs_dimension)
 
             moves = 0
@@ -225,17 +227,17 @@ def train():
                 if not args.headless:
                     env.render()
 
-                _ , taken_action, _ = compute_action(cur_obs, deterministic=False)
+                _, taken_action, _ = compute_action(cur_obs, deterministic=False)
 
                 next_obs, reward, done, info = env.step(taken_action)
-                done = info['done'] if not args.toy else done  # Running out of lives means the game is done
+                done = info['done'] if not args.toy else done  # Losing a life means the game is done
                 next_obs = preprocess_obs(next_obs, dim=obs_dimension)
                 if reward != 0:
                     reward = -1 if reward < 0 else 1
 
                 running_reward += reward
 
-                # Simple DQN approach - Pin it on Value Iteration / Reward Propagation
+                # Store Transitions in Replay Memory
                 while len(replay_memory) >= args.replay_size:  # Some weird bug caused the list to get larger
                     del replay_memory[randint(0, len(replay_memory) - 1)]
                 replay_memory.append([cur_obs, next_obs, taken_action, done, reward])
@@ -257,7 +259,7 @@ def train():
 
                     if game_nr % args.plot_every is 0:
                         game_loss = float('NaN')
-                        avg_reward = sum(rewards_list)/len(rewards_list)
+                        avg_reward = sum(rewards_list) / len(rewards_list)
 
                         if len(loss_list) > 0:
                             game_loss = sum(loss_list) / len(loss_list)
@@ -265,7 +267,7 @@ def train():
 
                         tqdm.write(" {:5d} | {:10.8f} | {:+5.0f} | {:10.5f} | {:12d} | {:15} | {:^10f}".format(
                             game_nr, eps_threshold, running_reward, avg_reward, moves, len(replay_memory), game_loss
-                            )
+                        )
                         )
                     running_reward = 0
                     break
@@ -275,7 +277,7 @@ def train():
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Progressive Neural Network")
+    parser = argparse.ArgumentParser(description="Training a DQN")
     parser.add_argument("--model-name", dest="model_path",
                         help="Path to a pretrained model")
     parser.add_argument("--output", dest="outfile",
@@ -342,16 +344,12 @@ if __name__ == "__main__":
         else FCN(n_actions=env.action_space.n)
     if chainer.cuda.available:
         net.to_gpu()
-    # optim = optimizers.RMSpropGraves(lr=args.alpha, momentum=args.momentum)
+    optim = optimizers.RMSpropGraves(lr=args.alpha, momentum=args.momentum)
     # optim = optimizers.RMSprop(lr=args.alpha)
-    optim = optimizers.Adam(alpha=args.alpha)
+    # optim = optimizers.Adam(alpha=args.alpha)
     optim.setup(net)
 
     if not os.path.exists("results/{}".format(args.env)):
         os.makedirs("results/{}".format(args.env))
 
     train()
-
-
-
-

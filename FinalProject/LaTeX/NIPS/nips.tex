@@ -52,7 +52,7 @@
 \maketitle
 
 \begin{abstract}
-We show that it is possible to implement a deep Q-network in Chainer. We use different techniques to train the network efficiently. We manage to achieve super human performance in a number of games and confirm that the original DQN scores are a solid baseline for future studies.
+We show that it is possible to implement a deep Q-network in Chainer. We use different techniques to train the network efficiently. While we did not manage to achieve super human performance in a number of games as proposed. We do confirm that the original DQN scores are achievable and thus make a solid baseline for future studies.
 \end{abstract}
 
 \section{Introduction}
@@ -133,7 +133,7 @@ Because deep q-learning is computationally expensive, we had to use a lot of opt
 
 Due to the complex nature of raw pixel data, it is a good idea to do a manual preprocessing steps on the data. Some of the difficulties of the raw pixel data: There are a lot of unused pixels in the game, for example the top of Pong only contains the score, this isn't useful information for playing the game. We can remove this from the input of the network, to reduce the dimensionality of the data. Another dimension is the information about color, every pixel in the input exist of three channels (i.e. red, green, and blue). By combining them into one input layer, we reduce the complexity even more, without throwing away necessary information. We do this by converting the 3-dimension color information to a 1-d representation containing shades of gray. The final preprocessing step is that we downsample the screen, that means that we divide the screen in to blocks of $2\times2$ pixels and only pick one of those pixels.. Most information is too detailed and can be ignored. The result of our preprocessing may be observed in figure \ref{fig:preprocess}. 
 
-Another problem with Atari games is that one screen doesn't provide enough information to be able to infer the precise state of the game (e.g. what direction is the ball moving toward? What direction is the opponent going? Or in pacman, what directions are the ghosts moving in?). In order to mitigate this effect, first we used the difference between the previous screen and the next screen. But since this doesn't provide that much extra information, we decided to use another technique in which we stack the last $n$ frames \cite{mnih2013playing}. Essentialy, we introduce 4 channels,  each channel contains an entire screen of the game. The idea is that the combination of the last four frames contain enough information to be able to accurately predict the state of the game.
+Another problem with Atari games is that one screen doesn't provide enough information to be able to infer the precise state of the game (e.g. what direction is the ball moving toward? What direction is the opponent going? Or in pacman, what directions are the ghosts moving in?). In order to mitigate this effect, first we used the difference between the previous screen and the next screen. After some testing, this this did not provide enough information, for example it need not necessarily provide the information of movement. We then decided to implement another technique in which we stack the last $n$ frames \cite{mnih2013playing}. Essentially, we introduce 4 channels, each channel contains an entire preprocessed screen of the game. The idea is that the combination of the last four frames contain enough information to be able to accurately predict the changes in the states of the game.
 
 \begin{figure}
 \centering
@@ -159,9 +159,9 @@ Different environments in the Atari gym have different reward structures, which 
 
 \subsection{Replay Memory}
 %Om patronen te voorkomen \cite{mnih2013playing}
-Since we are playing the game in real time in the Atari environment, there will be a high correlation between successive game-states. Which might lead the algorithm to get stuck in a negative feedback loop. Consider the scenario in which moving to the right in the beginning of the game gives an immediate positive reward, but makes the player get stuck in a local maximum.
+Since we are playing the game in real time in the Atari environment, there will be a high correlation between successive game-states. Which might lead to the algorithm getting stuck in a local maxima. Consider the scenario in which moving to the right in the beginning of the game gives an immediate positive reward, but makes the player get stuck in a local maximum.
 
-In order to mitigate this effect, we use experience replay \cite{mnih2013playing}. We let the network gather some experience, before we start training the network. We let the network play the game, and we store the current game state, the taken action, the resulting reward and the resulting game state and whether it was a final state to a list of experiences. After the network has gained enough experience, we start training the network. Training is done by uniformly sampling experiences from the experience list, the samples form our mini-batch. More details on training will be provided in chapter \ref{chapter:training}.
+In order to mitigate this effect, we use experience replay \cite{mnih2013playing}. We let the network gather some experience, before we start training the network. After a initial threshold is reached, we allow the network to play the game by itself and start learning. The replay memory consists of \textit{Transitions}, which we define as the the current game state, the resulting game state, the taken action, the resulting reward and whether it was a final state to a list of experiences. Training is done by uniformly sampling experiences from the experience list, these drawn samples form our mini-batch. More details on training will be provided in chapter \ref{chapter:training}.
 
 \subsection{Calculating the Loss} \label{chapter:training}
 %model initializatie + parameters etc. (qua hidden layers e.d.)
@@ -212,7 +212,7 @@ Then we loop for some number of entire games over the entire next phase of the t
 
 
 \section{Results}
-In this section we will go over our results for CartPole and Pong. We will first give a quick explanation of the game followed by the results.
+In this section we will go over our results for CartPole and Pong. We will first give a quick explanation of the game followed by the results. For the results we will apply smoothing to the rewards. Since when there are a large amount of games, the graphs would otherwise be unreadable due to big outliers, i.e. games where the agent performed very poorly. This smoothing is done by calculating the average of a window, i.e. the average of the next and previous $n$ games.
 
 
 \begin{figure}[H]
@@ -261,15 +261,17 @@ Another thing that we may observe is that the smoothed rewards (here we have tak
 \end{figure}
 
 \section{Conclusion}
-Although we were not able to train a network that fully beats any game apart from the easier CartPole, we can say with confidence that, given more time, the algorithm would eventually beat the criteria of beating Pong. We therefore show that the Google Deepmind paper \cite{mnih2013playing}, provides a good baseline for comparing algorithms for future reinforcement learning tasks. Since it is possible to train a network and achieve similar results as were reported in the paper.
+Although we were not able to train an agent that fully beats any game, apart from the easier CartPole, we can say with confidence that, given more time, the algorithm would eventually beat the criteria of beating Pong. We therefore show that the scores in the Google Deepmind paper \cite{mnih2013playing}, can be achieved provided enough computational power and time. Since DQNs were the first networks that could learn any Atari game from pixels without domain knowledge, we argue that this paper provides an excellent baseline for comparing algorithms for future reinforcement learning tasks.
 
 \section{Discussion and Future Work}
 %Complexer dan we dachten + link naar PNN
-Although we have implemented the standard deep Q network, there are many different network structures that each have their own advantage and disadvantages. One particularly interesting network architecture is the Progressive Neural Network, this structures is specifically strong when learning different, but similar, games with the same network. Since knowledge learnt from previous games may help in learning new games.
+We have implemented a standard deep Q-network. However, there are many more different network structures, with each have their own advantage and disadvantages, which have proven to learn faster and more stable then DQNs, like A3C networks \cite{DBLP:journals/corr/MnihBMGLHSK16}. 
 
-Although we can train our network to act in the different games with relative ease, we have to start over from scratch each time we train the network, so extending our implementation to a Progressive Neural Network would be the next step in achieving generalized Reinforcement Learning.
+However, one particularly interesting network architecture that we want to point out is the Progressive Neural Network \cite{DBLP:journals/corr/RusuRDSKKPH16}. This structures is specifically strong when learning different, similar, games with the same network. Since knowledge learnt from previous games may help in learning new games. Although we can train our network to act in the different games with relative ease, we have to start over from scratch each time we train the network, so extending our implementation to a Progressive Neural Network would be the next step in achieving generalized Reinforcement Learning.
 
-The stability issues observed in the training of Pong (figure \ref{fig:pong_results}), may not be due to the learning rate or other parameters, but due to the nature of the model \cite{van2016deep}. A solution to this problem is to have two networks, one for network updating and one for smoothing the difference in weights when syncing as discussed in section \ref{sec:doubleDQN}.
+Another issue that is inherent to (vanilla) DQNs, is stability. We also observed stability issues in the training of Pong (figure \ref{fig:pong_results}). We first hypothesized that this was due to the learning rate or other hyperparameters. After doing some research, this might be due to the nature of the model \cite{van2016deep}. A solution to this problem is to have two networks, one for network updating and one for smoothing the difference in weights when syncing as discussed in section \ref{sec:doubleDQN}.
+
+We also investigated into the use of the Huber loss versus the mean-square-error. Mind that this was before we implemented Reward Clipping. The Huber loss has a different behaviour depending in the value of $\delta$. When there is a small difference in the predicted and target Q-value, the MSE and the Huber loss behave similarly. However if the difference is big, MSE would have a massive loss and the Huber loss would not. The Huber loss would more behave like the absolute error in this case, depending on the chosen hyperparameter $\delta$. This also theoretically would stabilise learning, however due to a bug in Chainer, we could not use the Huber loss. This is when we implemented reward clipping to mitigate the potential exploding gradient problem.
 
 In this paper, we had to scale down some parameters used in \cite{mnih2015human}, due to computation limitations. One of the parameters we scaled down is the capacity of the replay memory, where we used 1/40th of the capacity.
 

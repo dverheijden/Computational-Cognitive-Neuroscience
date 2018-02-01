@@ -2,16 +2,15 @@ import chainer.functions as F
 import chainer.links as L
 from chainer import Chain
 
-"""
-For the Atari experiments we used a model with 3 convolutional layers followed by a fully connected layer
-and from which we predict the policy and value function. The convolutional layers are as follows. All have 12
-feature maps. The first convolutional layer has a kernel of size 8x8 and a stride of 4x4. The second layer has a
-kernel of size 4 and a stride of 2. The last convolutional layer has size 3x4 with a stride of 1. The fully connected
-layer has 256 hidden units.
-"""
-
 
 class CNN(Chain):
+    """
+    For the Atari experiments we used a model with 3 convolutional layers followed by a fully connected layer
+    and from which we predict the policy and value function. The convolutional layers are as follows. All have 12
+    feature maps. The first convolutional layer has a kernel of size 8x8 and a stride of 4x4. The second layer has a
+    kernel of size 4 and a stride of 2. The last convolutional layer has size 2x2 with a stride of 1. The fully connected
+    layer has 256 hidden units. The size of the output layer corresponds to the number of available actions.
+    """
     def __init__(self, n_actions, conv_channels, n_feature_maps=12, n_hidden_units=256):
         super(CNN, self).__init__()
         with self.init_scope():
@@ -40,6 +39,9 @@ class CNN(Chain):
 
 
 class FCN(Chain):
+    """
+    Toy network for quick and dirty testing
+    """
     def __init__(self, n_actions, n_hidden_units=256):
         super(FCN, self).__init__()
         with self.init_scope():
