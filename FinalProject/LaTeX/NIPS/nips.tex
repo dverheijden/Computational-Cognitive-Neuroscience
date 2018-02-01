@@ -163,7 +163,7 @@ Since we are playing the game in real time in the Atari environment, there will 
 
 In order to mitigate this effect, we use experience replay \cite{mnih2013playing}. We let the network gather some experience, before we start training the network. After a initial threshold is reached, we allow the network to play the game by itself and start learning. The replay memory consists of \textit{Transitions}, which we define as the the current game state, the resulting game state, the taken action, the resulting reward and whether it was a final state to a list of experiences. Training is done by uniformly sampling experiences from the experience list, these drawn samples form our mini-batch. More details on training will be provided in chapter \ref{chapter:training}.
 
-\subsection{Calculating the Loss} \label{chapter:training}
+\subsection{Calculating the Loss} \label{chapter:loss}
 %model initializatie + parameters etc. (qua hidden layers e.d.)
 %Huber loss vs. MSE
 % hooe wordt alles gecombineerd
@@ -189,11 +189,17 @@ $ denotes the fact that the weights of this network are constant while training 
 We then synchronize model $\theta$ with $\bar\theta$ after a set number of frames. This leads to an increased stability in learning \cite{van2016deep}. Syncing is done by smoothing the difference between the weights of bother networks. One way how this is achieved is that the new weights are the average of the weights of the networks.
 
 
-\subsubsection{Training}
+\subsubsection{Training}\label{chapter:training}
 
 Start the training by initializing the necessary things: initialize the weights of the network, initialize the experience list, initialize the Atari environment and set the current screen to be all zeros. After that, we can start training the network. 
 
-Then we loop for some number of entire games over the entire next phase of the training. We use the network to decide the actions taken in the game. If a game is finished, we simply reset the environment and continue training, we also have to reinitialize the current game state. Every time an action is taken, we collect the current state, the action, the reward, and the next state and store these in the experience list. After we have gathered sufficient experience, we start training on this experience. This is done by sampling random experiences from the list, and using the values from the experience to calculate the loss, and do backpropagation with this loss, to estimate how we have to update the network. 
+Then we loop for a given number of games over the next phase of the training. 
+
+The agent plays the game, we store each move that it makes, together with the starting and ending state and the clipped reward in the experience list. The state that is stored is the preprocessed state. If the agent wins or loses the game, we increment the game counter and restart the game. 
+
+Every so many moves, we let the agent train from the experience list. We extract a random subset from the list and start the actual training loop. For each experience in the subset, we calculate the loss as in chapter \ref{chapter:loss}, and use that to update the network weights.
+
+
 
 
 
@@ -212,7 +218,7 @@ Then we loop for some number of entire games over the entire next phase of the t
 
 
 \section{Results}
-In this section we will go over our results for CartPole and Pong. We will first give a quick explanation of the game followed by the results. For the results we will apply smoothing to the rewards. Since when there are a large amount of games, the graphs would otherwise be unreadable due to big outliers, i.e. games where the agent performed very poorly. This smoothing is done by calculating the average of a window, i.e. the average of the next and previous $n$ games.
+In this section we will go over our results for CartPole and Pong. We will first give a quick explanation of the game followed by the results. For the results we will apply smoothing to the rewards. If there is a large amount of games, the graphs would otherwise be unreadable due to big outliers, i.e. games where the agent performed very poorly. This smoothing is done by calculating the average of a window, i.e. the average of the next and previous $n$ games.
 
 
 \begin{figure}[H]
@@ -271,7 +277,7 @@ However, one particularly interesting network architecture that we want to point
 
 Another issue that is inherent to (vanilla) DQNs, is stability. We also observed stability issues in the training of Pong (figure \ref{fig:pong_results}). We first hypothesized that this was due to the learning rate or other hyperparameters. After doing some research, this might be due to the nature of the model \cite{van2016deep}. A solution to this problem is to have two networks, one for network updating and one for smoothing the difference in weights when syncing as discussed in section \ref{sec:doubleDQN}.
 
-We also investigated into the use of the Huber loss versus the mean-square-error. Mind that this was before we implemented Reward Clipping. The Huber loss has a different behaviour depending in the value of $\delta$. When there is a small difference in the predicted and target Q-value, the MSE and the Huber loss behave similarly. However if the difference is big, MSE would have a massive loss and the Huber loss would not. The Huber loss would more behave like the absolute error in this case, depending on the chosen hyperparameter $\delta$. This also theoretically would stabilise learning, however due to a bug in Chainer, we could not use the Huber loss. This is when we implemented reward clipping to mitigate the potential exploding gradient problem.
+We also investigated the use of the Huber loss as opposed to the mean-square-error. Mind that this was before we implemented Reward Clipping. The Huber loss has a different behaviour depending in the value of $\delta$. When there is a small difference in the predicted and target Q-value, the MSE and the Huber loss behave similarly. However if the difference is big, MSE would have a massive loss and the Huber loss would not. The Huber loss behaves more like the absolute error in this case. Although this depends on the chosen hyperparameter $\delta$. This also theoretically would stabilize learning, however due to a bug in Chainer, we could not use the Huber loss. That is why we implemented reward clipping to mitigate the potential exploding gradient problem.
 
 In this paper, we had to scale down some parameters used in \cite{mnih2015human}, due to computation limitations. One of the parameters we scaled down is the capacity of the replay memory, where we used 1/40th of the capacity.
 
